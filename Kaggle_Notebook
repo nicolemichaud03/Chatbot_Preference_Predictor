@@ -1,1 +1,3909 @@
-{"metadata":{"kernelspec":{"language":"python","display_name":"Python 3","name":"python3"},"language_info":{"name":"python","version":"3.10.13","mimetype":"text/x-python","codemirror_mode":{"name":"ipython","version":3},"pygments_lexer":"ipython3","nbconvert_exporter":"python","file_extension":".py"},"kaggle":{"accelerator":"none","dataSources":[{"sourceId":66631,"databundleVersionId":8346466,"sourceType":"competition"},{"sourceId":3176,"sourceType":"datasetVersion","datasetId":1835}],"dockerImageVersionId":30698,"isInternetEnabled":true,"language":"python","sourceType":"notebook","isGpuEnabled":false}},"nbformat_minor":4,"nbformat":4,"cells":[{"cell_type":"markdown","source":"# Kaggle Competition Notebook:\"LMSYS - Chatbot Arena Human Preference Predictions\"","metadata":{}},{"cell_type":"markdown","source":"In this notebook, I am conducting data exploration, analysis, and modeling in order to generate predictions for which Chatbot model will be preferred for a given prompt.","metadata":{}},{"cell_type":"markdown","source":"## Data Preparation","metadata":{}},{"cell_type":"code","source":"# This Python 3 environment comes with many helpful analytics libraries installed\n# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python\n# For example, here's several helpful packages to load\n\nimport numpy as np # linear algebra\nimport pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)\n\n# Input data files are available in the read-only \"../input/\" directory\n# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory\n\nimport os\nfor dirname, _, filenames in os.walk('/kaggle/input'):\n    for filename in filenames:\n        print(os.path.join(dirname, filename))\n\n# You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using \"Save & Run All\" \n# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session","metadata":{"_uuid":"8f2839f25d086af736a60e9eeb907d3b93b6e0e5","_cell_guid":"b1076dfc-b9ad-4769-8c92-a6c4dae69d19","execution":{"iopub.status.busy":"2024-07-07T15:42:09.501459Z","iopub.execute_input":"2024-07-07T15:42:09.501875Z","iopub.status.idle":"2024-07-07T15:42:10.906024Z","shell.execute_reply.started":"2024-07-07T15:42:09.501840Z","shell.execute_reply":"2024-07-07T15:42:10.904640Z"},"trusted":true},"execution_count":1,"outputs":[{"name":"stdout","text":"/kaggle/input/glove-global-vectors-for-word-representation/glove.6B.200d.txt\n/kaggle/input/glove-global-vectors-for-word-representation/glove.6B.50d.txt\n/kaggle/input/glove-global-vectors-for-word-representation/glove.6B.100d.txt\n/kaggle/input/lmsys-chatbot-arena/sample_submission.csv\n/kaggle/input/lmsys-chatbot-arena/train.csv\n/kaggle/input/lmsys-chatbot-arena/test.csv\n","output_type":"stream"}]},{"cell_type":"code","source":"import matplotlib.pyplot as plt\n%matplotlib inline\nimport math\nimport seaborn as sns\nsns.set(font_scale=2)\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV\nfrom sklearn.ensemble import AdaBoostClassifier, GradientBoostingClassifier, RandomForestClassifier\nfrom sklearn.metrics import precision_score, accuracy_score, f1_score, confusion_matrix, classification_report, roc_curve, auc, ConfusionMatrixDisplay\nfrom sklearn.tree import DecisionTreeClassifier\nfrom sklearn import tree\nfrom sklearn.neighbors import KNeighborsClassifier\nimport nltk\nnltk.download('punkt')\nfrom nltk.corpus import stopwords\nimport re\nfrom nltk.tokenize import RegexpTokenizer, word_tokenize\nfrom sklearn.metrics import log_loss\nfrom sklearn.pipeline import Pipeline\nfrom sklearn import feature_extraction, linear_model, model_selection, preprocessing\nfrom sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, TfidfTransformer\nfrom nltk import FreqDist\nfrom sklearn.naive_bayes import MultinomialNB\nfrom nltk.stem.snowball import SnowballStemmer\nfrom sklearn.model_selection import GridSearchCV\nfrom sklearn.multioutput import MultiOutputClassifier\n\nfrom gensim.models import word2vec","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:42:10.908383Z","iopub.execute_input":"2024-07-07T15:42:10.908990Z","iopub.status.idle":"2024-07-07T15:42:32.096784Z","shell.execute_reply.started":"2024-07-07T15:42:10.908947Z","shell.execute_reply":"2024-07-07T15:42:32.095662Z"},"trusted":true},"execution_count":2,"outputs":[{"name":"stdout","text":"[nltk_data] Downloading package punkt to /usr/share/nltk_data...\n[nltk_data]   Package punkt is already up-to-date!\n","output_type":"stream"}]},{"cell_type":"code","source":"!pip install keras==2.15.0","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:42:32.102966Z","iopub.execute_input":"2024-07-07T15:42:32.103303Z","iopub.status.idle":"2024-07-07T15:42:51.671317Z","shell.execute_reply.started":"2024-07-07T15:42:32.103274Z","shell.execute_reply":"2024-07-07T15:42:51.669858Z"},"trusted":true},"execution_count":3,"outputs":[{"name":"stdout","text":"Collecting keras==2.15.0\n  Downloading keras-2.15.0-py3-none-any.whl.metadata (2.4 kB)\nDownloading keras-2.15.0-py3-none-any.whl (1.7 MB)\n\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m1.7/1.7 MB\u001b[0m \u001b[31m30.9 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m00:01\u001b[0m\n\u001b[?25hInstalling collected packages: keras\n  Attempting uninstall: keras\n    Found existing installation: keras 3.2.1\n    Uninstalling keras-3.2.1:\n      Successfully uninstalled keras-3.2.1\n\u001b[31mERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\ntensorflow-decision-forests 1.8.1 requires wurlitzer, which is not installed.\u001b[0m\u001b[31m\n\u001b[0mSuccessfully installed keras-2.15.0\n","output_type":"stream"}]},{"cell_type":"code","source":"# from tensorflow import keras\nimport keras\n# import keras_nlp\nimport tensorflow as tf\n","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:42:51.673292Z","iopub.execute_input":"2024-07-07T15:42:51.673851Z","iopub.status.idle":"2024-07-07T15:43:05.899506Z","shell.execute_reply.started":"2024-07-07T15:42:51.673794Z","shell.execute_reply":"2024-07-07T15:43:05.898248Z"},"trusted":true},"execution_count":4,"outputs":[{"name":"stderr","text":"2024-07-07 15:42:53.843652: E external/local_xla/xla/stream_executor/cuda/cuda_dnn.cc:9261] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered\n2024-07-07 15:42:53.843829: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:607] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered\n2024-07-07 15:42:54.008022: E external/local_xla/xla/stream_executor/cuda/cuda_blas.cc:1515] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered\n","output_type":"stream"}]},{"cell_type":"code","source":"from keras.models import Model\n\nfrom keras.layers import Dense, Input\n\nfrom tqdm.auto import tqdm\n\nfrom keras.layers import TextVectorization\nfrom keras import Sequential\nfrom keras.layers import Dense, Embedding, GlobalAveragePooling1D\n","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:43:05.900941Z","iopub.execute_input":"2024-07-07T15:43:05.901688Z","iopub.status.idle":"2024-07-07T15:43:05.916260Z","shell.execute_reply.started":"2024-07-07T15:43:05.901650Z","shell.execute_reply":"2024-07-07T15:43:05.914198Z"},"trusted":true},"execution_count":5,"outputs":[]},{"cell_type":"markdown","source":"Loading the train and test datasets:","metadata":{}},{"cell_type":"code","source":"train = pd.read_csv(\"/kaggle/input/lmsys-chatbot-arena/train.csv\")\ntest = pd.read_csv(\"/kaggle/input/lmsys-chatbot-arena/test.csv\")","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:43:08.547898Z","iopub.execute_input":"2024-07-07T15:43:08.548349Z","iopub.status.idle":"2024-07-07T15:43:12.428999Z","shell.execute_reply.started":"2024-07-07T15:43:08.548313Z","shell.execute_reply":"2024-07-07T15:43:12.427826Z"},"trusted":true},"execution_count":6,"outputs":[]},{"cell_type":"code","source":"train.head()","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:43:12.431335Z","iopub.execute_input":"2024-07-07T15:43:12.431728Z","iopub.status.idle":"2024-07-07T15:43:12.462118Z","shell.execute_reply.started":"2024-07-07T15:43:12.431695Z","shell.execute_reply":"2024-07-07T15:43:12.460941Z"},"trusted":true},"execution_count":7,"outputs":[{"execution_count":7,"output_type":"execute_result","data":{"text/plain":"       id             model_a              model_b  \\\n0   30192  gpt-4-1106-preview           gpt-4-0613   \n1   53567           koala-13b           gpt-4-0613   \n2   65089  gpt-3.5-turbo-0613       mistral-medium   \n3   96401    llama-2-13b-chat  mistral-7b-instruct   \n4  198779           koala-13b   gpt-3.5-turbo-0314   \n\n                                              prompt  \\\n0  [\"Is it morally right to try to have a certain...   \n1  [\"What is the difference between marriage lice...   \n2  [\"explain function calling. how would you call...   \n3  [\"How can I create a test set for a very rare ...   \n4  [\"What is the best way to travel from Tel-Aviv...   \n\n                                          response_a  \\\n0  [\"The question of whether it is morally right ...   \n1  [\"A marriage license is a legal document that ...   \n2  [\"Function calling is the process of invoking ...   \n3  [\"Creating a test set for a very rare category...   \n4  [\"The best way to travel from Tel Aviv to Jeru...   \n\n                                          response_b  winner_model_a  \\\n0  [\"As an AI, I don't have personal beliefs or o...               1   \n1  [\"A marriage license and a marriage certificat...               0   \n2  [\"Function calling is the process of invoking ...               0   \n3  [\"When building a classifier for a very rare c...               1   \n4  [\"The best way to travel from Tel-Aviv to Jeru...               0   \n\n   winner_model_b  winner_tie  \n0               0           0  \n1               1           0  \n2               0           1  \n3               0           0  \n4               1           0  ","text/html":"<div>\n<style scoped>\n    .dataframe tbody tr th:only-of-type {\n        vertical-align: middle;\n    }\n\n    .dataframe tbody tr th {\n        vertical-align: top;\n    }\n\n    .dataframe thead th {\n        text-align: right;\n    }\n</style>\n<table border=\"1\" class=\"dataframe\">\n  <thead>\n    <tr style=\"text-align: right;\">\n      <th></th>\n      <th>id</th>\n      <th>model_a</th>\n      <th>model_b</th>\n      <th>prompt</th>\n      <th>response_a</th>\n      <th>response_b</th>\n      <th>winner_model_a</th>\n      <th>winner_model_b</th>\n      <th>winner_tie</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <th>0</th>\n      <td>30192</td>\n      <td>gpt-4-1106-preview</td>\n      <td>gpt-4-0613</td>\n      <td>[\"Is it morally right to try to have a certain...</td>\n      <td>[\"The question of whether it is morally right ...</td>\n      <td>[\"As an AI, I don't have personal beliefs or o...</td>\n      <td>1</td>\n      <td>0</td>\n      <td>0</td>\n    </tr>\n    <tr>\n      <th>1</th>\n      <td>53567</td>\n      <td>koala-13b</td>\n      <td>gpt-4-0613</td>\n      <td>[\"What is the difference between marriage lice...</td>\n      <td>[\"A marriage license is a legal document that ...</td>\n      <td>[\"A marriage license and a marriage certificat...</td>\n      <td>0</td>\n      <td>1</td>\n      <td>0</td>\n    </tr>\n    <tr>\n      <th>2</th>\n      <td>65089</td>\n      <td>gpt-3.5-turbo-0613</td>\n      <td>mistral-medium</td>\n      <td>[\"explain function calling. how would you call...</td>\n      <td>[\"Function calling is the process of invoking ...</td>\n      <td>[\"Function calling is the process of invoking ...</td>\n      <td>0</td>\n      <td>0</td>\n      <td>1</td>\n    </tr>\n    <tr>\n      <th>3</th>\n      <td>96401</td>\n      <td>llama-2-13b-chat</td>\n      <td>mistral-7b-instruct</td>\n      <td>[\"How can I create a test set for a very rare ...</td>\n      <td>[\"Creating a test set for a very rare category...</td>\n      <td>[\"When building a classifier for a very rare c...</td>\n      <td>1</td>\n      <td>0</td>\n      <td>0</td>\n    </tr>\n    <tr>\n      <th>4</th>\n      <td>198779</td>\n      <td>koala-13b</td>\n      <td>gpt-3.5-turbo-0314</td>\n      <td>[\"What is the best way to travel from Tel-Aviv...</td>\n      <td>[\"The best way to travel from Tel Aviv to Jeru...</td>\n      <td>[\"The best way to travel from Tel-Aviv to Jeru...</td>\n      <td>0</td>\n      <td>1</td>\n      <td>0</td>\n    </tr>\n  </tbody>\n</table>\n</div>"},"metadata":{}}]},{"cell_type":"code","source":"test.head()","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:43:12.463808Z","iopub.execute_input":"2024-07-07T15:43:12.464271Z","iopub.status.idle":"2024-07-07T15:43:12.479616Z","shell.execute_reply.started":"2024-07-07T15:43:12.464232Z","shell.execute_reply":"2024-07-07T15:43:12.478232Z"},"trusted":true},"execution_count":8,"outputs":[{"execution_count":8,"output_type":"execute_result","data":{"text/plain":"        id                                             prompt  \\\n0   136060  [\"I have three oranges today, I ate an orange ...   \n1   211333  [\"You are a mediator in a heated political deb...   \n2  1233961  [\"How to initialize the classification head wh...   \n\n                                          response_a  \\\n0                    [\"You have two oranges today.\"]   \n1  [\"Thank you for sharing the details of the sit...   \n2  [\"When you want to initialize the classificati...   \n\n                                          response_b  \n0  [\"You still have three oranges. Eating an oran...  \n1  [\"Mr Reddy and Ms Blue both have valid points ...  \n2  [\"To initialize the classification head when p...  ","text/html":"<div>\n<style scoped>\n    .dataframe tbody tr th:only-of-type {\n        vertical-align: middle;\n    }\n\n    .dataframe tbody tr th {\n        vertical-align: top;\n    }\n\n    .dataframe thead th {\n        text-align: right;\n    }\n</style>\n<table border=\"1\" class=\"dataframe\">\n  <thead>\n    <tr style=\"text-align: right;\">\n      <th></th>\n      <th>id</th>\n      <th>prompt</th>\n      <th>response_a</th>\n      <th>response_b</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <th>0</th>\n      <td>136060</td>\n      <td>[\"I have three oranges today, I ate an orange ...</td>\n      <td>[\"You have two oranges today.\"]</td>\n      <td>[\"You still have three oranges. Eating an oran...</td>\n    </tr>\n    <tr>\n      <th>1</th>\n      <td>211333</td>\n      <td>[\"You are a mediator in a heated political deb...</td>\n      <td>[\"Thank you for sharing the details of the sit...</td>\n      <td>[\"Mr Reddy and Ms Blue both have valid points ...</td>\n    </tr>\n    <tr>\n      <th>2</th>\n      <td>1233961</td>\n      <td>[\"How to initialize the classification head wh...</td>\n      <td>[\"When you want to initialize the classificati...</td>\n      <td>[\"To initialize the classification head when p...</td>\n    </tr>\n  </tbody>\n</table>\n</div>"},"metadata":{}}]},{"cell_type":"code","source":"train.info()","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:43:12.482745Z","iopub.execute_input":"2024-07-07T15:43:12.483083Z","iopub.status.idle":"2024-07-07T15:43:12.554457Z","shell.execute_reply.started":"2024-07-07T15:43:12.483057Z","shell.execute_reply":"2024-07-07T15:43:12.553101Z"},"trusted":true},"execution_count":9,"outputs":[{"name":"stdout","text":"<class 'pandas.core.frame.DataFrame'>\nRangeIndex: 57477 entries, 0 to 57476\nData columns (total 9 columns):\n #   Column          Non-Null Count  Dtype \n---  ------          --------------  ----- \n 0   id              57477 non-null  int64 \n 1   model_a         57477 non-null  object\n 2   model_b         57477 non-null  object\n 3   prompt          57477 non-null  object\n 4   response_a      57477 non-null  object\n 5   response_b      57477 non-null  object\n 6   winner_model_a  57477 non-null  int64 \n 7   winner_model_b  57477 non-null  int64 \n 8   winner_tie      57477 non-null  int64 \ndtypes: int64(4), object(5)\nmemory usage: 3.9+ MB\n","output_type":"stream"}]},{"cell_type":"code","source":"train.describe()","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:43:12.556068Z","iopub.execute_input":"2024-07-07T15:43:12.556521Z","iopub.status.idle":"2024-07-07T15:43:12.592815Z","shell.execute_reply.started":"2024-07-07T15:43:12.556489Z","shell.execute_reply":"2024-07-07T15:43:12.591483Z"},"trusted":true},"execution_count":10,"outputs":[{"execution_count":10,"output_type":"execute_result","data":{"text/plain":"                 id  winner_model_a  winner_model_b    winner_tie\ncount  5.747700e+04    57477.000000    57477.000000  57477.000000\nmean   2.142564e+09        0.349079        0.341911      0.309011\nstd    1.238327e+09        0.476683        0.474354      0.462090\nmin    3.019200e+04        0.000000        0.000000      0.000000\n25%    1.071821e+09        0.000000        0.000000      0.000000\n50%    2.133658e+09        0.000000        0.000000      0.000000\n75%    3.211645e+09        1.000000        1.000000      1.000000\nmax    4.294947e+09        1.000000        1.000000      1.000000","text/html":"<div>\n<style scoped>\n    .dataframe tbody tr th:only-of-type {\n        vertical-align: middle;\n    }\n\n    .dataframe tbody tr th {\n        vertical-align: top;\n    }\n\n    .dataframe thead th {\n        text-align: right;\n    }\n</style>\n<table border=\"1\" class=\"dataframe\">\n  <thead>\n    <tr style=\"text-align: right;\">\n      <th></th>\n      <th>id</th>\n      <th>winner_model_a</th>\n      <th>winner_model_b</th>\n      <th>winner_tie</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <th>count</th>\n      <td>5.747700e+04</td>\n      <td>57477.000000</td>\n      <td>57477.000000</td>\n      <td>57477.000000</td>\n    </tr>\n    <tr>\n      <th>mean</th>\n      <td>2.142564e+09</td>\n      <td>0.349079</td>\n      <td>0.341911</td>\n      <td>0.309011</td>\n    </tr>\n    <tr>\n      <th>std</th>\n      <td>1.238327e+09</td>\n      <td>0.476683</td>\n      <td>0.474354</td>\n      <td>0.462090</td>\n    </tr>\n    <tr>\n      <th>min</th>\n      <td>3.019200e+04</td>\n      <td>0.000000</td>\n      <td>0.000000</td>\n      <td>0.000000</td>\n    </tr>\n    <tr>\n      <th>25%</th>\n      <td>1.071821e+09</td>\n      <td>0.000000</td>\n      <td>0.000000</td>\n      <td>0.000000</td>\n    </tr>\n    <tr>\n      <th>50%</th>\n      <td>2.133658e+09</td>\n      <td>0.000000</td>\n      <td>0.000000</td>\n      <td>0.000000</td>\n    </tr>\n    <tr>\n      <th>75%</th>\n      <td>3.211645e+09</td>\n      <td>1.000000</td>\n      <td>1.000000</td>\n      <td>1.000000</td>\n    </tr>\n    <tr>\n      <th>max</th>\n      <td>4.294947e+09</td>\n      <td>1.000000</td>\n      <td>1.000000</td>\n      <td>1.000000</td>\n    </tr>\n  </tbody>\n</table>\n</div>"},"metadata":{}}]},{"cell_type":"code","source":"winner_a = train[train['winner_model_a']==True]","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:43:12.594085Z","iopub.execute_input":"2024-07-07T15:43:12.594547Z","iopub.status.idle":"2024-07-07T15:43:12.607322Z","shell.execute_reply.started":"2024-07-07T15:43:12.594508Z","shell.execute_reply":"2024-07-07T15:43:12.605786Z"},"trusted":true},"execution_count":11,"outputs":[]},{"cell_type":"code","source":"winner_b = train[train['winner_model_b']==True]","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:43:12.609295Z","iopub.execute_input":"2024-07-07T15:43:12.609645Z","iopub.status.idle":"2024-07-07T15:43:12.622160Z","shell.execute_reply.started":"2024-07-07T15:43:12.609617Z","shell.execute_reply":"2024-07-07T15:43:12.620731Z"},"trusted":true},"execution_count":12,"outputs":[]},{"cell_type":"code","source":"winner_a['model_a'].value_counts()","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:43:12.623762Z","iopub.execute_input":"2024-07-07T15:43:12.624209Z","iopub.status.idle":"2024-07-07T15:43:12.638231Z","shell.execute_reply.started":"2024-07-07T15:43:12.624176Z","shell.execute_reply":"2024-07-07T15:43:12.636873Z"},"trusted":true},"execution_count":13,"outputs":[{"execution_count":13,"output_type":"execute_result","data":{"text/plain":"model_a\ngpt-4-1106-preview          2019\ngpt-4-0613                  1280\ngpt-3.5-turbo-0613          1213\ngpt-4-0314                  1033\nclaude-2.1                   896\n                            ... \nchatglm2-6b                   35\nqwen1.5-7b-chat               29\nopenchat-3.5-0106             28\nqwen1.5-4b-chat               19\nmistral-7b-instruct-v0.2      15\nName: count, Length: 64, dtype: int64"},"metadata":{}}]},{"cell_type":"code","source":"winner_b['model_b'].value_counts()","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:43:12.639747Z","iopub.execute_input":"2024-07-07T15:43:12.640098Z","iopub.status.idle":"2024-07-07T15:43:12.658610Z","shell.execute_reply.started":"2024-07-07T15:43:12.640068Z","shell.execute_reply":"2024-07-07T15:43:12.657471Z"},"trusted":true},"execution_count":14,"outputs":[{"execution_count":14,"output_type":"execute_result","data":{"text/plain":"model_b\ngpt-4-1106-preview          2054\ngpt-4-0613                  1170\ngpt-3.5-turbo-0613          1168\ngpt-4-0314                   960\nclaude-1                     880\n                            ... \nchatglm2-6b                   38\nopenchat-3.5-0106             35\nqwen1.5-7b-chat               22\nqwen1.5-4b-chat               16\nmistral-7b-instruct-v0.2      12\nName: count, Length: 64, dtype: int64"},"metadata":{}}]},{"cell_type":"markdown","source":"The top 4 models that won most often as model a or as model b are:\n- gpt-4-1106-preview\n- gpt-4-0613\n- gpt-3.5-turbo-0613\n- gpt-4-0314","metadata":{}},{"cell_type":"code","source":"# Creating a function to perform cleaning steps at once (Removes numbers and unnecessary characters, makes all letters lowercase, removes stopwords)\nnltk.download('stopwords')\nstopwords_list = stopwords.words('english')\n\nno_bad_chars = re.compile('[!\\\"#$%&()*+-./:;<=>?@[\\]^_`{|}~\\n - ]')\n# no_nums = re.compile('[\\d-]')\n\ndef clean_text(text):\n#     text = no_nums.sub('', text)\n    text = no_bad_chars.sub(' ', text)\n    text = text.lower()\n    text = ' '.join(word for word in text.split() if word not in stopwords_list)\n    return text\n     ","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:43:12.662651Z","iopub.execute_input":"2024-07-07T15:43:12.663153Z","iopub.status.idle":"2024-07-07T15:43:12.684446Z","shell.execute_reply.started":"2024-07-07T15:43:12.663092Z","shell.execute_reply":"2024-07-07T15:43:12.683110Z"},"trusted":true},"execution_count":15,"outputs":[{"name":"stdout","text":"[nltk_data] Downloading package stopwords to /usr/share/nltk_data...\n[nltk_data]   Package stopwords is already up-to-date!\n","output_type":"stream"}]},{"cell_type":"code","source":"train_cleaned = train.copy()\ntrain['model_a'] = train['model_a'].astype(str)\ntrain['model_b'] = train['model_b'].astype(str)\ntrain['prompt'] = train['prompt'].astype(str)\ntrain['response_a'] = train['response_a'].astype(str)\ntrain['response_b'] = train['response_b'].astype(str)\n\n\n     ","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:43:58.228360Z","iopub.execute_input":"2024-07-07T15:43:58.228823Z","iopub.status.idle":"2024-07-07T15:43:58.261888Z","shell.execute_reply.started":"2024-07-07T15:43:58.228787Z","shell.execute_reply":"2024-07-07T15:43:58.260591Z"},"trusted":true},"execution_count":16,"outputs":[]},{"cell_type":"code","source":"#Applying text cleaning function to text columns\n\ntrain_cleaned['model_a'] = (train['model_a']).apply(clean_text)\ntrain_cleaned['model_b'] = (train['model_b']).apply(clean_text)\ntrain_cleaned['prompt'] = (train['prompt']).apply(clean_text)\ntrain_cleaned['response_a'] = (train['response_a']).apply(clean_text)\ntrain_cleaned['response_b'] = (train['response_b']).apply(clean_text)\n","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:43:58.358446Z","iopub.execute_input":"2024-07-07T15:43:58.358883Z","iopub.status.idle":"2024-07-07T15:45:17.223582Z","shell.execute_reply.started":"2024-07-07T15:43:58.358848Z","shell.execute_reply":"2024-07-07T15:45:17.222202Z"},"trusted":true},"execution_count":17,"outputs":[]},{"cell_type":"markdown","source":"## Modeling","metadata":{}},{"cell_type":"code","source":"# # possible visualization??\n# import graphviz \n\n# dot = graphviz.Digraph(comment='Neural Network')\n\n# dot.node('x', label='Inputs', color='yellow')\n# dot.node('w', label='Weights')\n# dot.node('b', label='Biases')  \n# dot.node('z', label='Output', shape='rectangle')\n\n# dot.edge('x', 'w')\n# dot.edge('w', 'z')\n# dot.edge('b', 'z')\n\n# dot.render('neural_network')\n","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:47:04.573473Z","iopub.execute_input":"2024-07-07T15:47:04.574380Z","iopub.status.idle":"2024-07-07T15:47:04.580172Z","shell.execute_reply.started":"2024-07-07T15:47:04.574334Z","shell.execute_reply":"2024-07-07T15:47:04.578754Z"},"trusted":true},"execution_count":21,"outputs":[]},{"cell_type":"markdown","source":"Preparing the data for modeling with multiple outputs:","metadata":{}},{"cell_type":"code","source":"# target = train_cleaned[['winner_model_a', 'winner_model_b', 'winner_tie']]\ntrain_cleaned['combined_text'] = train_cleaned['prompt'] + ' ' + train_cleaned['response_a'] + ' ' + train_cleaned['response_b']\ndata = train_cleaned['combined_text'].map(word_tokenize).values\n","metadata":{"execution":{"iopub.status.busy":"2024-07-07T15:47:06.835307Z","iopub.execute_input":"2024-07-07T15:47:06.836378Z"},"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"total_vocabulary = set(word for prompt in data for word in prompt)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"len(total_vocabulary)\nprint('There are {} unique tokens in the dataset.'.format(len(total_vocabulary)))","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"def target(data):\n    y1 = data.pop('winner_model_a')\n    y1 = np.array(y1)\n    y2 = data.pop('winner_model_b')\n    y2 = np.array(y2)\n    y3 = data.pop('winner_tie')\n    y3 = np.array(y3)\n    return y1, y2, y3\n\ntarget = target(train_cleaned)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"target_t = np.transpose(target)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# scores = [(cross_val_score(model1, data, target_t, cv=2).mean())]","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# scores","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"from keras.preprocessing.sequence import pad_sequences\nfrom keras.layers import Input, Dense, LSTM, Embedding\nfrom keras.layers import Dropout, Activation, Bidirectional, GlobalMaxPool1D\nfrom keras.models import Sequential\nfrom keras import initializers, regularizers, constraints, optimizers, layers\nfrom keras.preprocessing import text, sequence","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"train_size = int(len(train_cleaned) * .8)\nlabels = target_t\n\ntext_train =  train_cleaned['combined_text'][:train_size]\n\nlabels_train = labels[:train_size]\n\nlabels_test = labels[train_size:]\n\ntext_test =  train_cleaned['combined_text'][train_size:]","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"#deep learning with word embeddings\n#tokenize\ntokenizer = text.Tokenizer(num_words=20000)\ntokenizer.fit_on_texts(list(text_train))\nlist_tokenized_prmpt_rsps = tokenizer.texts_to_sequences(text_train)\nX_t = sequence.pad_sequences(list_tokenized_prmpt_rsps, maxlen=200)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"tokenizer.fit_on_texts(list(text_test))\nlist_tokenized_prmpt_rsps_test = tokenizer.texts_to_sequences(text_test)\nX_t_test = sequence.pad_sequences(list_tokenized_prmpt_rsps_test, maxlen=200)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"#Multioutput classifier wrapper on log reg\n# from sklearn.datasets import make_multilabel_classification\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.multioutput import MultiOutputClassifier\nfrom sklearn.multioutput import ClassifierChain\nfrom sklearn.linear_model import LogisticRegression\n\n\nfrom sklearn.multiclass import OneVsRestClassifier\nlr = LogisticRegression()\nclassifier1 = ClassifierChain(lr)\n# Creating the MultiOutput Classifier with Logistic Regression as the base estimator\n# classifier1 = MultiOutputClassifier(LogisticRegression())\n\n# Fitting the classifier on the training data\n# classifier1.fit(X_t, labels_train)\n\n# Making predictions on the test set\n# predictions1 = classifier1.predict_proba(X_t_test)\n\nbase_lr = LogisticRegression(random_state=0)\nchain = ClassifierChain(base_lr, order='random', random_state=0)\npreds_c = chain.fit(X_t, labels_train).predict_proba(X_t_test)\n# preds = classifier1.predict(X_t_test)\n","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"from sklearn.multioutput import ClassifierChain\nfrom sklearn.metrics import jaccard_score\nmax_iter=10\n\nchains = [ClassifierChain(base_lr, order=\"random\", random_state=i) for i in range(10)]\nfor chain in chains:\n    chain.fit(X_t, labels_train)\n\nY_pred_chains = np.array([chain.predict_proba(X_t_test) for chain in chains])\nchain_jaccard_scores = [\n    jaccard_score(labels_test, Y_pred_chain >= 0.5, average=\"samples\")\n    for Y_pred_chain in Y_pred_chains\n]\n\nY_pred_ensemble = Y_pred_chains.mean(axis=0)\nensemble_jaccard_score = jaccard_score(\n    labels_test, Y_pred_ensemble >= 0.5, average=\"samples\"\n)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"preds_c","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.multioutput import ClassifierChain\n\nbase_lr = LogisticRegression(solver='lbfgs', random_state=0)\nchain = ClassifierChain(base_lr, order='random', random_state=0, chain_method='predict')\nchain.fit(X_t, labels_train).predict(X_t_test)\nchain.predict_proba(X_t_test)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"probas = classifier1.predict_proba(X_t_test)\nprobas","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"preds = classifier1.predict(X_t_test)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"preds","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"log_loss(preds,labels_test)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"preds","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"print(log_loss(preds_c, labels_test))","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"predictions1[0][1].shape","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"\nlabels_test.shape","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"#Multioutput classifier wrapper on random forest\n# from sklearn.datasets import make_multilabel_classification\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.multioutput import MultiOutputClassifier\nfrom sklearn.linear_model import LogisticRegression\n\n# Creating the MultiOutput Classifier with Logistic Regression as the base estimator\nclassifier2 = OneVsRestClassifier(RandomForestClassifier())\n\n# Fitting the classifier on the training data\nclassifier2.fit(X_t, labels_train)\n\n# Making predictions on the test set\n# predictions2 = classifier.predict_proba(X_t_test)\n\n\n# print(log_loss(predictions, labels_test))","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"probas2 = classifier2.predict_proba(X_t_test)\nprobas2","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"preds2 = classifier2.predict(X_t_test)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"preds2","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"print(log_loss(preds2, target_t))","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# embedding_size = 128\n# x = layers.Embedding(20000, embedding_size)\n# # x = layers.LSTM(25, return_sequences=True)(x)\n# # x = layers.GlobalMaxPool1D(name='x', built=False)(x)\n# x = layers.Dropout(0.5)(x)\n# x = layers.Dense(128, activation='relu')(x)\n# x = layers.Dropout(0.5)(x)\n# second_dense = layers.Dense(128, activation='relu')(x)\n# output1 = layers.Dense(1, activation='softmax')(second_dense)\n# third_dense =layers.Dense(64, activation='relu')(output1)\n# output2 = layers.Dense(1, activation='softmax')(third_dense)\n# fourth_dense = layers.Dense(32, activation='relu')(output2)\n# output3 = layers.Dense(1, activation='softmax')(fourth_dense)\n\n\n\n\n# # model.add(layers.Embedding(20000, embedding_size))\n# # model.add(layers.LSTM(25, return_sequences=True))\n# # model.add(layers.GlobalMaxPool1D())\n# # model.add(layers.Dropout(0.5))\n# # model.add(layers.Dense(50, activation='relu'))\n# # model.add(layers.Dropout(0.5))\n# # model.add(layers.Dense(1, activation='softmax'))\n# # model.add(layers.Dense(1, activation='softmax'))\n# # model.add(layers.Dense(1, activation='softmax'))","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"model1 = Sequential()\nmodel1.add(Dense(128, activation='relu', input_shape=(len(np.transpose(X_t)),)))\nmodel1.add(Dropout(0.1))\nmodel1.add(Dense(64, activation='relu'))\nmodel1.add(Dropout(0.1))\nmodel1.add(Dense(32, activation='relu'))\nmodel1.add(Dropout(0.1))\nmodel1.add(Dense((labels_train.shape[1]), activation='softmax')) # <-- Notice activation in final layer.\n\n# scorer = cross_val_score(model1, data, target_t, cv=2).mean()\n\nmodel1.compile(metrics = 'accuracy',\n               loss='binary_crossentropy', # <-- Notice loss function.\n              optimizer='adam',\n              score=(cross_val_score(model1, data, target_t, cv=2).mean()))\n# scorer = check_scoring(model1, scoring=score)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"def my_scorer(clf, X, y_true):\n    class_labels = clf.classes_\n    y_pred_proba = clf.predict_proba(X)\n    error = ...\n    return error\n\ngs = GridSearchCV(estimator=KNeighborsClassifier(),\n                  param_grid=[{'n_neighbors': [6]}],\n                  cv=5,\n                  scoring=my_scorer)","metadata":{},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"print(cross_val_score(model1, X_t, labels_train, cv=3))","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"cv_results = cross_validate(estimator=estimator,\n                            X=X,\n                            error_score=error_score,\n)\ncv_results[\"test_score\"]","metadata":{},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"print(model1.summary())","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"scores = [(cross_val_score(model1, data, target_t, cv=2).mean())]","metadata":{},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"model1.fit(X_t, labels_train, epochs=10, batch_size=100, validation_split=0.2)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"model1.evaluate(X_t_test, labels_test)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"predictions_ = model1.predict(X_t_test)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"predictions_[:10]","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"softmax_layer = keras.layers.activations.Softmax()\ninput = np.array([1.0, 2.0, 1.0])\nresult = softmax_layer(input)\n","metadata":{},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"from keras.layers import Softmax","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"input_layer = Input(shape=(len(np.transpose(X_t)),))\nembedding_size = 128\nembedding = layers.Embedding(20000, embedding_size)\n\nfirst_dense = Dense(units=128, activation='relu')(input_layer)\nsecond_dense = Dense(units=128, activation='relu')(first_dense)\n\ny1_output = Dense(units=1, name='y1_output')(second_dense)\nthird_dense = Dense(units=64, activation='relu')(second_dense)\n\ny2_output = Dense(units=1, name='y2_output')(third_dense)\nfourth_dense = Dense(units=32, activation='softmax')(third_dense)\n\ny3_output = Dense(units=1, name='y3_output')(fourth_dense)\nsm_layer = Softmax()\n# ,  activation='softmax'\n# softmax_layer = Softmax()\n# sm_input = softmax_layer(input_layer)\nmodel = Model(inputs=input_layer, outputs=[y1_output, y2_output, y3_output])\n\nprint(model.summary())","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"inp = np.asarray([input_layer])\nlayer = tf.keras.layers.Softmax()\nlayer(inp).numpy()\n# array([[0.21194157, 0.5761169 , 0.21194157]], dtype=float32)\nmask = np.asarray([[True, False, True]], dtype=bool)\nlayer(inp, mask).numpy()","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"model.compile(optimizer='adam', \n              loss={'y1_output': 'BinaryCrossentropy', 'y2_output': 'BinaryCrossentropy', 'y3_output':'BinaryCrossentropy'},\n              metrics={'y1_output': ['Accuracy'],\n                       'y2_output': ['Accuracy'],\n                       'y3_output': ['Accuracy']})\n\n# loss={'y1_output': 'mse', 'y2_output': 'mse'},\n#               metrics={'y1_output': tf.keras.metrics.RootMeanSquaredError(),\n#                        'y2_output': tf.keras.metrics.RootMeanSquaredError()})","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"model.fit(X_t, labels_train, epochs=5, batch_size=100, validation_split=0.2)\n#, batch_size=32 , validation_split=0.1","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"model.evaluate(X_t_test, labels_test)\n","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# # Generate predictions\npredictions = model.predict(X_t_test)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"print(np.transpose(predictions))","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"import keras_tuner as kt","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"import keras_tuner as kt\nfrom tensorflow.keras.models import Sequential\nfrom tensorflow.keras.layers import Dense, Activation\n\ndef model_builder(hp):\n    model = Sequential()\n    model.add(Dense(128, activation='relu', input_shape=(len(np.transpose(X_t)),)))\n    model.add(Dropout(0.1))\n    model.add(Dense(64, activation='relu'))\n    model.add(Dropout(0.1))\n    model.add(Dense(32, activation='relu'))\n    model.add(Dropout(0.1))\n    model.add(Dense((labels_train.shape[1]), activation='softmax'))\n    \n#     model.add(Dense(10, activation='softmax'))\n    model.compile(\n        optimizer=keras.optimizers.Adam(hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4])),\n        loss='sparse_categorical_crossentropy',\n        metrics=['accuracy']\n    )\n    return model\n\ntuner = kt.Hyperband(\n    model_builder,\n    objective='val_accuracy',\n    max_epochs=10,\n    directory='my_dir',\n    project_name='intro_to_kt'\n)\n\ntuner.search(X_t, labels_train, epochs=50)\nbest_hps = tuner.get_best_hyperparameters(num_trials=1)[0]","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"def model_builder(hp):\n#   model = keras.Sequential()\n#   model.add(keras.layers.Flatten(input_shape=(28, 28)))\n    model = Sequential()\n    model.add(Dense(128, activation='relu', input_shape=(len(np.transpose(X_t)),)))\n#     model.add(Dropout(0.1))\n#     model.add(Dense(64, activation='relu'))\n#     model.add(Dropout(0.1))\n#     model.add(Dense(32, activation='relu'))\n#     model.add(Dropout(0.1))\n#     model.add(Dense((labels_train.shape[1]), activation='softmax'))\n\n  # Tune the number of units in the first Dense layer\n  # Choose an optimal value between 32-512\n    hp_units = hp.Int('units', min_value=32, max_value=512, step=32)\n    model.add(keras.layers.Dense(units=hp_units, activation='relu'))\n    model.add(keras.layers.Dense(10))\n\n  # Tune the learning rate for the optimizer\n  # Choose an optimal value from 0.01, 0.001, or 0.0001\n    hp_learning_rate = hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4])\n    model.compile(optimizer=keras.optimizers.Adam(learning_rate=hp_learning_rate),\n                loss=keras.losses.BinaryCrossentropy(),\n                metrics=['accuracy'])\n    return model","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"tuner = kt.Hyperband(model_builder,\n                     objective='val_accuracy',\n                     max_epochs=10,\n                     factor=3,\n#                      directory='my_dir',\n                     project_name='intro_to_kt')","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"stop_early = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"tuner.search(X_t, labels_train, epochs=50, validation_split=0.2, callbacks=[stop_early])\n\n# Get the optimal hyperparameters\nbest_hps=tuner.get_best_hyperparameters(num_trials=1)[0]\n\nprint(f\"\"\"\nThe hyperparameter search is complete. The optimal number of units in the first densely-connected\nlayer is {best_hps.get('units')} and the optimal learning rate for the optimizer\nis {best_hps.get('learning_rate')}.\n\"\"\")","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# param_grid = dict(epochs=[10,20,30],\n#                   batch_size= [100,200,300] ,\n#                   learning_rate= [0.5, 1],\n                  \n#                  )\nlearn_rate = [0.001, 0.01, 0.1, 0.2, 0.3]\nmomentum = [0.0, 0.2, 0.4, 0.6, 0.8, 0.9]\nparam_grid = dict(learn_rate = [0.001, 0.01, 0.1, 0.2, 0.3], momentum = [0.0, 0.2, 0.4, 0.6, 0.8, 0.9])\n# grid = GridSearchCV(estimator=model1, param_grid=param_grid, n_jobs=-1, cv=3)\n# param_grid = dict(optimizer__learning_rate=learn_rate, optimizer__momentum=momentum)\ngrid = GridSearchCV(estimator=model1, param_grid=param_grid, n_jobs=-1, cv=3, scoring='accuracy')\ngrid_result = grid.fit(X_t, labels_train)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# combined_model.fit([[prompt_bow_test, responsea_bow_test, responseb_bow_test] + [train_embed1, train_embed2, train_embed3]], labels_train, epochs=10, batch_size=128)\n","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# # input_layer = Input(shape=(len(train_set.columns),))\n# first_dense = Dense(units=128, activation='softmax')(merged_layer)\n# second_dense = Dense(units=128, activation='softmax')(first_dense)\n\n# y1_output = Dense(units=1, name='y1_output')(second_dense)\n\n# third_dense = Dense(units=64, activation='softmax')(second_dense)\n# y2_output = Dense(units=1, name='y2_output')(third_dense)\n\n# fourth_dense = Dense(units=32, activation='softmax')(third_dense)\n# y3_output = Dense(units=1, name='y3_output')(fourth_dense)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"","metadata":{},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# vocab_size = 12000\n# tokenize = keras.preprocessing.text.Tokenizer(num_words = vocab_size, char_level=False)\n# tokenize.fit_on_texts(prompt_train)\n# tokenize.fit_on_texts(response_a_train)\n# tokenize.fit_on_texts(response_b_train)\n","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# prompt_bow_train = tokenize.texts_to_matrix(prompt_train)\n# prompt_bow_test = tokenize.texts_to_matrix(prompt_test)\n# responsea_bow_train = tokenize.texts_to_matrix(response_a_train)\n# responsea_bow_test = tokenize.texts_to_matrix(response_a_test)\n# responseb_bow_train = tokenize.texts_to_matrix(response_b_train)\n# responseb_bow_test = tokenize.texts_to_matrix(response_b_test)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# layers = keras.layers","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# # Define our wide model with the functional API\n# bow_input1 = layers.Input(shape=(vocab_size,))\n# bow_input2 = layers.Input(shape=(vocab_size,))\n# bow_input3 = layers.Input(shape=(vocab_size,))\n# merged_layer = layers.concatenate([bow_input1, bow_input2, bow_input3])\n# merged_layer = layers.Dense(256, activation='softmax')(merged_layer)\n","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# # input_layer = Input(shape=(len(train_set.columns),))\n# first_dense = Dense(units=128, activation='softmax')(merged_layer)\n# second_dense = Dense(units=128, activation='softmax')(first_dense)\n\n# y1_output = Dense(units=1, name='y1_output')(second_dense)\n\n# third_dense = Dense(units=64, activation='softmax')(second_dense)\n# y2_output = Dense(units=1, name='y2_output')(third_dense)\n\n# fourth_dense = Dense(units=32, activation='softmax')(third_dense)\n# y3_output = Dense(units=1, name='y3_output')(fourth_dense)\n# # sixth_dense = Dense(units='64', activation='relu')(fifth_dense)\n\n# # model = Model(inputs=input_layer, outputs=[y1_output, y2_output, y3_output])\n\n# # print(model.summary())","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# # predictions = layers.Dense(1)(merged_layer)\n# wide_model = keras.Model(inputs=[bow_input1, bow_input2, bow_input3], outputs=[y1_output, y2_output, y3_output])","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# wide_model.compile(loss='BinaryCrossentropy', optimizer='adam', metrics=['accuracy'])\n# print(wide_model.summary())","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"markdown","source":"Deep Model","metadata":{}},{"cell_type":"code","source":"# train_embed1 = tokenize.texts_to_sequences(prompt_train)\n# test_embed1 = tokenize.texts_to_sequences(prompt_test)\n\n# train_embed2 = tokenize.texts_to_sequences(response_a_train)\n# test_embed2 = tokenize.texts_to_sequences(response_a_test)\n\n# train_embed3 = tokenize.texts_to_sequences(response_b_train)\n# test_embed3 = tokenize.texts_to_sequences(response_b_test)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# max_seq_length = 170\n# train_embed1 = keras.preprocessing.sequence.pad_sequences(train_embed1, maxlen=max_seq_length)\n# test_embed1 = keras.preprocessing.sequence.pad_sequences(test_embed1, maxlen=max_seq_length)\n\n# train_embed2 = keras.preprocessing.sequence.pad_sequences(train_embed2, maxlen=max_seq_length)\n# test_embed2 = keras.preprocessing.sequence.pad_sequences(test_embed2, maxlen=max_seq_length)\n\n# train_embed3 = keras.preprocessing.sequence.pad_sequences(train_embed3, maxlen=max_seq_length)\n# test_embed3 = keras.preprocessing.sequence.pad_sequences(test_embed3, maxlen=max_seq_length)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# deep_inputs = layers.Input(shape=(max_seq_length,))\n# embedding1 = layers.Embedding(vocab_size, 8,   input_length=max_seq_length)(deep_inputs)\n# embedding1 = layers.Flatten()(embedding1)\n# embedding2 = layers.Embedding(vocab_size, 8,   input_length=max_seq_length)(deep_inputs)\n# embedding2 = layers.Flatten()(embedding2)\n# embedding3 = layers.Embedding(vocab_size, 8,   input_length=max_seq_length)(deep_inputs)\n# embedding3 = layers.Flatten()(embedding3)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# embed_out1 = layers.Dense(1, name='embed_out1')(embedding1)\n# embed_out2 = layers.Dense(1, name='embed_out2')(embedding2)\n# embed_out3 = layers.Dense(1, name='embed_out3')(embedding3)\n# # y2_output = Dense(units=1, name='y2_output')(third_dense)\n# deep_model = Model(inputs=[embedding1, embedding2, embedding3], outputs=[embed_out1, embed_out2, embed_out3])\n# deep_model.compile(loss='BinaryCrossentropy', optimizer='adam', metrics=['accuracy'])","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# print(deep_model.summary())","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# wide_model.input","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# [deep_model.input]","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# # Combine wide and deep into one model\n# # merged_out = layers.concatenate([wide_model.output, deep_model.output])\n# # merged_out = layers.Dense(1)(merged_out)\n# combined_model = keras.Model(wide_model.input + [deep_model.input], [wide_model.output, deep_model.output])\n# print(combined_model.summary())\n\n","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# combined_model.compile(loss='BinaryCrossentropy',\n#                        optimizer='adam',\n#                        metrics=['accuracy'])","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# total_inputs = [prompt_bow_train, responsea_bow_train, responseb_bow_train] + [train_embed1, train_embed2, train_embed3]","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# train_embed1","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# # Run training\n# combined_model.fit([[prompt_bow_test, responsea_bow_test, responseb_bow_test] + [train_embed1, train_embed2, train_embed3]], labels_train, epochs=10, batch_size=128)\n","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# combined_model.evaluate([prompt_bow_test, responsea_bow_test, responseb_bow_test] + [train_embed1, train_embed2, train_embed3], labels_test, batch_size=128)","metadata":{"trusted":true},"execution_count":null,"outputs":[]},{"cell_type":"code","source":"# # Generate predictions\n# predictions = combined_model.predict([description_bow_test, variety_test] + [test_embed])","metadata":{"trusted":true},"execution_count":null,"outputs":[]}]}
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "efbb9f5e",
+   "metadata": {
+    "papermill": {
+     "duration": 0.026129,
+     "end_time": "2024-07-19T18:44:31.801930",
+     "exception": false,
+     "start_time": "2024-07-19T18:44:31.775801",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "# Kaggle Competition Notebook:\"LMSYS - Chatbot Arena Human Preference Predictions\""
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "432106b9",
+   "metadata": {
+    "papermill": {
+     "duration": 0.024799,
+     "end_time": "2024-07-19T18:44:31.853129",
+     "exception": false,
+     "start_time": "2024-07-19T18:44:31.828330",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "In this notebook, I am conducting data exploration, analysis, and modeling in order to generate predictions for which Chatbot model will be preferred for a given prompt."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "767b958f",
+   "metadata": {
+    "papermill": {
+     "duration": 0.025074,
+     "end_time": "2024-07-19T18:44:31.903486",
+     "exception": false,
+     "start_time": "2024-07-19T18:44:31.878412",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "## Data Preparation"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "5599dca4",
+   "metadata": {
+    "papermill": {
+     "duration": 0.025258,
+     "end_time": "2024-07-19T18:44:31.953803",
+     "exception": false,
+     "start_time": "2024-07-19T18:44:31.928545",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "First, import necessary packages, and connect to kaggle to import competition dataset:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "7b6233ab",
+   "metadata": {
+    "_cell_guid": "b1076dfc-b9ad-4769-8c92-a6c4dae69d19",
+    "_uuid": "8f2839f25d086af736a60e9eeb907d3b93b6e0e5",
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:44:32.006082Z",
+     "iopub.status.busy": "2024-07-19T18:44:32.005718Z",
+     "iopub.status.idle": "2024-07-19T18:44:32.752355Z",
+     "shell.execute_reply": "2024-07-19T18:44:32.751476Z"
+    },
+    "papermill": {
+     "duration": 0.775266,
+     "end_time": "2024-07-19T18:44:32.754659",
+     "exception": false,
+     "start_time": "2024-07-19T18:44:31.979393",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "/kaggle/input/glove-global-vectors-for-word-representation/glove.6B.200d.txt\n",
+      "/kaggle/input/glove-global-vectors-for-word-representation/glove.6B.50d.txt\n",
+      "/kaggle/input/glove-global-vectors-for-word-representation/glove.6B.100d.txt\n",
+      "/kaggle/input/lmsys-chatbot-arena/sample_submission.csv\n",
+      "/kaggle/input/lmsys-chatbot-arena/train.csv\n",
+      "/kaggle/input/lmsys-chatbot-arena/test.csv\n"
+     ]
+    }
+   ],
+   "source": [
+    "# This Python 3 environment comes with many helpful analytics libraries installed\n",
+    "# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python\n",
+    "# For example, here's several helpful packages to load\n",
+    "\n",
+    "import numpy as np # linear algebra\n",
+    "import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)\n",
+    "\n",
+    "# Input data files are available in the read-only \"../input/\" directory\n",
+    "# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory\n",
+    "\n",
+    "import os\n",
+    "for dirname, _, filenames in os.walk('/kaggle/input'):\n",
+    "    for filename in filenames:\n",
+    "        print(os.path.join(dirname, filename))\n",
+    "\n",
+    "# You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using \"Save & Run All\" \n",
+    "# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "0508b285",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:44:32.806866Z",
+     "iopub.status.busy": "2024-07-19T18:44:32.806458Z",
+     "iopub.status.idle": "2024-07-19T18:44:45.644858Z",
+     "shell.execute_reply": "2024-07-19T18:44:45.644080Z"
+    },
+    "papermill": {
+     "duration": 12.866861,
+     "end_time": "2024-07-19T18:44:45.647205",
+     "exception": false,
+     "start_time": "2024-07-19T18:44:32.780344",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[nltk_data] Downloading package punkt to /usr/share/nltk_data...\n",
+      "[nltk_data]   Package punkt is already up-to-date!\n"
+     ]
+    }
+   ],
+   "source": [
+    "import matplotlib.pyplot as plt\n",
+    "%matplotlib inline\n",
+    "import math\n",
+    "import seaborn as sns\n",
+    "sns.set(font_scale=2)\n",
+    "from sklearn.linear_model import LogisticRegression\n",
+    "from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV\n",
+    "from sklearn.ensemble import AdaBoostClassifier, GradientBoostingClassifier, RandomForestClassifier\n",
+    "from sklearn.metrics import precision_score, accuracy_score, f1_score, confusion_matrix, classification_report, roc_curve, auc, ConfusionMatrixDisplay\n",
+    "from sklearn.tree import DecisionTreeClassifier\n",
+    "from sklearn import tree\n",
+    "from sklearn.neighbors import KNeighborsClassifier\n",
+    "import nltk\n",
+    "nltk.download('punkt')\n",
+    "from nltk.corpus import stopwords\n",
+    "import re\n",
+    "from nltk.tokenize import RegexpTokenizer, word_tokenize\n",
+    "from sklearn.metrics import log_loss\n",
+    "from sklearn.pipeline import Pipeline\n",
+    "from sklearn import feature_extraction, linear_model, model_selection, preprocessing\n",
+    "from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, TfidfTransformer\n",
+    "from nltk import FreqDist\n",
+    "from sklearn.naive_bayes import MultinomialNB\n",
+    "from nltk.stem.snowball import SnowballStemmer\n",
+    "from sklearn.model_selection import GridSearchCV\n",
+    "from sklearn.multioutput import MultiOutputClassifier\n",
+    "\n",
+    "from gensim.models import word2vec"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "6ca234f4",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:44:45.700030Z",
+     "iopub.status.busy": "2024-07-19T18:44:45.699493Z",
+     "iopub.status.idle": "2024-07-19T18:45:01.479848Z",
+     "shell.execute_reply": "2024-07-19T18:45:01.478888Z"
+    },
+    "papermill": {
+     "duration": 15.809053,
+     "end_time": "2024-07-19T18:45:01.482147",
+     "exception": false,
+     "start_time": "2024-07-19T18:44:45.673094",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Collecting keras==2.15.0\r\n",
+      "  Downloading keras-2.15.0-py3-none-any.whl.metadata (2.4 kB)\r\n",
+      "Downloading keras-2.15.0-py3-none-any.whl (1.7 MB)\r\n",
+      "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m1.7/1.7 MB\u001b[0m \u001b[31m17.6 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\r\n",
+      "\u001b[?25hInstalling collected packages: keras\r\n",
+      "  Attempting uninstall: keras\r\n",
+      "    Found existing installation: keras 3.2.1\r\n",
+      "    Uninstalling keras-3.2.1:\r\n",
+      "      Successfully uninstalled keras-3.2.1\r\n",
+      "\u001b[31mERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\r\n",
+      "tensorflow-decision-forests 1.8.1 requires wurlitzer, which is not installed.\u001b[0m\u001b[31m\r\n",
+      "\u001b[0mSuccessfully installed keras-2.15.0\r\n"
+     ]
+    }
+   ],
+   "source": [
+    "!pip install keras==2.15.0"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "e0c1f36e",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:45:01.538004Z",
+     "iopub.status.busy": "2024-07-19T18:45:01.537657Z",
+     "iopub.status.idle": "2024-07-19T18:45:12.753891Z",
+     "shell.execute_reply": "2024-07-19T18:45:12.753150Z"
+    },
+    "papermill": {
+     "duration": 11.247247,
+     "end_time": "2024-07-19T18:45:12.756318",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:01.509071",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "2024-07-19 18:45:03.215556: E external/local_xla/xla/stream_executor/cuda/cuda_dnn.cc:9261] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered\n",
+      "2024-07-19 18:45:03.215655: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:607] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered\n",
+      "2024-07-19 18:45:03.350967: E external/local_xla/xla/stream_executor/cuda/cuda_blas.cc:1515] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered\n"
+     ]
+    }
+   ],
+   "source": [
+    "# from tensorflow import keras\n",
+    "import keras\n",
+    "# import keras_nlp\n",
+    "import tensorflow as tf\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "9ebdb0c8",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:45:12.811089Z",
+     "iopub.status.busy": "2024-07-19T18:45:12.810491Z",
+     "iopub.status.idle": "2024-07-19T18:45:12.821268Z",
+     "shell.execute_reply": "2024-07-19T18:45:12.820528Z"
+    },
+    "papermill": {
+     "duration": 0.039937,
+     "end_time": "2024-07-19T18:45:12.823085",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:12.783148",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "from keras.models import Model\n",
+    "\n",
+    "from keras.layers import Dense, Input\n",
+    "\n",
+    "from tqdm.auto import tqdm\n",
+    "\n",
+    "from keras.layers import TextVectorization\n",
+    "from keras import Sequential\n",
+    "from keras.layers import Dense, Embedding, GlobalAveragePooling1D\n",
+    "\n",
+    "from keras.preprocessing.sequence import pad_sequences\n",
+    "from keras.layers import Input, Dense, LSTM, Embedding\n",
+    "from keras.layers import Softmax\n",
+    "from keras.layers import Dropout, Activation, Bidirectional, GlobalMaxPool1D\n",
+    "from keras.models import Sequential\n",
+    "from keras import initializers, regularizers, constraints, optimizers, layers\n",
+    "from keras.preprocessing import text, sequence"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "be0078fc",
+   "metadata": {
+    "papermill": {
+     "duration": 0.025701,
+     "end_time": "2024-07-19T18:45:12.874931",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:12.849230",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "Loading and exploring the train and test datasets:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "de380ba8",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:45:12.971197Z",
+     "iopub.status.busy": "2024-07-19T18:45:12.970362Z",
+     "iopub.status.idle": "2024-07-19T18:45:16.183498Z",
+     "shell.execute_reply": "2024-07-19T18:45:16.182657Z"
+    },
+    "papermill": {
+     "duration": 3.243072,
+     "end_time": "2024-07-19T18:45:16.185944",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:12.942872",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "train = pd.read_csv(\"/kaggle/input/lmsys-chatbot-arena/train.csv\")\n",
+    "test = pd.read_csv(\"/kaggle/input/lmsys-chatbot-arena/test.csv\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "id": "6b2f3bfc",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:45:16.250338Z",
+     "iopub.status.busy": "2024-07-19T18:45:16.249732Z",
+     "iopub.status.idle": "2024-07-19T18:45:16.272758Z",
+     "shell.execute_reply": "2024-07-19T18:45:16.271768Z"
+    },
+    "papermill": {
+     "duration": 0.053516,
+     "end_time": "2024-07-19T18:45:16.274720",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:16.221204",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>id</th>\n",
+       "      <th>model_a</th>\n",
+       "      <th>model_b</th>\n",
+       "      <th>prompt</th>\n",
+       "      <th>response_a</th>\n",
+       "      <th>response_b</th>\n",
+       "      <th>winner_model_a</th>\n",
+       "      <th>winner_model_b</th>\n",
+       "      <th>winner_tie</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>30192</td>\n",
+       "      <td>gpt-4-1106-preview</td>\n",
+       "      <td>gpt-4-0613</td>\n",
+       "      <td>[\"Is it morally right to try to have a certain...</td>\n",
+       "      <td>[\"The question of whether it is morally right ...</td>\n",
+       "      <td>[\"As an AI, I don't have personal beliefs or o...</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>53567</td>\n",
+       "      <td>koala-13b</td>\n",
+       "      <td>gpt-4-0613</td>\n",
+       "      <td>[\"What is the difference between marriage lice...</td>\n",
+       "      <td>[\"A marriage license is a legal document that ...</td>\n",
+       "      <td>[\"A marriage license and a marriage certificat...</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>65089</td>\n",
+       "      <td>gpt-3.5-turbo-0613</td>\n",
+       "      <td>mistral-medium</td>\n",
+       "      <td>[\"explain function calling. how would you call...</td>\n",
+       "      <td>[\"Function calling is the process of invoking ...</td>\n",
+       "      <td>[\"Function calling is the process of invoking ...</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>96401</td>\n",
+       "      <td>llama-2-13b-chat</td>\n",
+       "      <td>mistral-7b-instruct</td>\n",
+       "      <td>[\"How can I create a test set for a very rare ...</td>\n",
+       "      <td>[\"Creating a test set for a very rare category...</td>\n",
+       "      <td>[\"When building a classifier for a very rare c...</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>198779</td>\n",
+       "      <td>koala-13b</td>\n",
+       "      <td>gpt-3.5-turbo-0314</td>\n",
+       "      <td>[\"What is the best way to travel from Tel-Aviv...</td>\n",
+       "      <td>[\"The best way to travel from Tel Aviv to Jeru...</td>\n",
+       "      <td>[\"The best way to travel from Tel-Aviv to Jeru...</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "       id             model_a              model_b  \\\n",
+       "0   30192  gpt-4-1106-preview           gpt-4-0613   \n",
+       "1   53567           koala-13b           gpt-4-0613   \n",
+       "2   65089  gpt-3.5-turbo-0613       mistral-medium   \n",
+       "3   96401    llama-2-13b-chat  mistral-7b-instruct   \n",
+       "4  198779           koala-13b   gpt-3.5-turbo-0314   \n",
+       "\n",
+       "                                              prompt  \\\n",
+       "0  [\"Is it morally right to try to have a certain...   \n",
+       "1  [\"What is the difference between marriage lice...   \n",
+       "2  [\"explain function calling. how would you call...   \n",
+       "3  [\"How can I create a test set for a very rare ...   \n",
+       "4  [\"What is the best way to travel from Tel-Aviv...   \n",
+       "\n",
+       "                                          response_a  \\\n",
+       "0  [\"The question of whether it is morally right ...   \n",
+       "1  [\"A marriage license is a legal document that ...   \n",
+       "2  [\"Function calling is the process of invoking ...   \n",
+       "3  [\"Creating a test set for a very rare category...   \n",
+       "4  [\"The best way to travel from Tel Aviv to Jeru...   \n",
+       "\n",
+       "                                          response_b  winner_model_a  \\\n",
+       "0  [\"As an AI, I don't have personal beliefs or o...               1   \n",
+       "1  [\"A marriage license and a marriage certificat...               0   \n",
+       "2  [\"Function calling is the process of invoking ...               0   \n",
+       "3  [\"When building a classifier for a very rare c...               1   \n",
+       "4  [\"The best way to travel from Tel-Aviv to Jeru...               0   \n",
+       "\n",
+       "   winner_model_b  winner_tie  \n",
+       "0               0           0  \n",
+       "1               1           0  \n",
+       "2               0           1  \n",
+       "3               0           0  \n",
+       "4               1           0  "
+      ]
+     },
+     "execution_count": 7,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "train.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "9ef06b78",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:45:16.329936Z",
+     "iopub.status.busy": "2024-07-19T18:45:16.329067Z",
+     "iopub.status.idle": "2024-07-19T18:45:16.339304Z",
+     "shell.execute_reply": "2024-07-19T18:45:16.338349Z"
+    },
+    "papermill": {
+     "duration": 0.039756,
+     "end_time": "2024-07-19T18:45:16.341485",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:16.301729",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>id</th>\n",
+       "      <th>prompt</th>\n",
+       "      <th>response_a</th>\n",
+       "      <th>response_b</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>136060</td>\n",
+       "      <td>[\"I have three oranges today, I ate an orange ...</td>\n",
+       "      <td>[\"You have two oranges today.\"]</td>\n",
+       "      <td>[\"You still have three oranges. Eating an oran...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>211333</td>\n",
+       "      <td>[\"You are a mediator in a heated political deb...</td>\n",
+       "      <td>[\"Thank you for sharing the details of the sit...</td>\n",
+       "      <td>[\"Mr Reddy and Ms Blue both have valid points ...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>1233961</td>\n",
+       "      <td>[\"How to initialize the classification head wh...</td>\n",
+       "      <td>[\"When you want to initialize the classificati...</td>\n",
+       "      <td>[\"To initialize the classification head when p...</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "        id                                             prompt  \\\n",
+       "0   136060  [\"I have three oranges today, I ate an orange ...   \n",
+       "1   211333  [\"You are a mediator in a heated political deb...   \n",
+       "2  1233961  [\"How to initialize the classification head wh...   \n",
+       "\n",
+       "                                          response_a  \\\n",
+       "0                    [\"You have two oranges today.\"]   \n",
+       "1  [\"Thank you for sharing the details of the sit...   \n",
+       "2  [\"When you want to initialize the classificati...   \n",
+       "\n",
+       "                                          response_b  \n",
+       "0  [\"You still have three oranges. Eating an oran...  \n",
+       "1  [\"Mr Reddy and Ms Blue both have valid points ...  \n",
+       "2  [\"To initialize the classification head when p...  "
+      ]
+     },
+     "execution_count": 8,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "test.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "id": "31de11f9",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:45:16.400685Z",
+     "iopub.status.busy": "2024-07-19T18:45:16.400089Z",
+     "iopub.status.idle": "2024-07-19T18:45:16.455387Z",
+     "shell.execute_reply": "2024-07-19T18:45:16.454365Z"
+    },
+    "papermill": {
+     "duration": 0.085598,
+     "end_time": "2024-07-19T18:45:16.457607",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:16.372009",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "<class 'pandas.core.frame.DataFrame'>\n",
+      "RangeIndex: 57477 entries, 0 to 57476\n",
+      "Data columns (total 9 columns):\n",
+      " #   Column          Non-Null Count  Dtype \n",
+      "---  ------          --------------  ----- \n",
+      " 0   id              57477 non-null  int64 \n",
+      " 1   model_a         57477 non-null  object\n",
+      " 2   model_b         57477 non-null  object\n",
+      " 3   prompt          57477 non-null  object\n",
+      " 4   response_a      57477 non-null  object\n",
+      " 5   response_b      57477 non-null  object\n",
+      " 6   winner_model_a  57477 non-null  int64 \n",
+      " 7   winner_model_b  57477 non-null  int64 \n",
+      " 8   winner_tie      57477 non-null  int64 \n",
+      "dtypes: int64(4), object(5)\n",
+      "memory usage: 3.9+ MB\n"
+     ]
+    }
+   ],
+   "source": [
+    "train.info()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "id": "37c2864f",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:45:16.515312Z",
+     "iopub.status.busy": "2024-07-19T18:45:16.514924Z",
+     "iopub.status.idle": "2024-07-19T18:45:16.543381Z",
+     "shell.execute_reply": "2024-07-19T18:45:16.542470Z"
+    },
+    "papermill": {
+     "duration": 0.060299,
+     "end_time": "2024-07-19T18:45:16.545416",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:16.485117",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>id</th>\n",
+       "      <th>winner_model_a</th>\n",
+       "      <th>winner_model_b</th>\n",
+       "      <th>winner_tie</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>count</th>\n",
+       "      <td>5.747700e+04</td>\n",
+       "      <td>57477.000000</td>\n",
+       "      <td>57477.000000</td>\n",
+       "      <td>57477.000000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>mean</th>\n",
+       "      <td>2.142564e+09</td>\n",
+       "      <td>0.349079</td>\n",
+       "      <td>0.341911</td>\n",
+       "      <td>0.309011</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>std</th>\n",
+       "      <td>1.238327e+09</td>\n",
+       "      <td>0.476683</td>\n",
+       "      <td>0.474354</td>\n",
+       "      <td>0.462090</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>min</th>\n",
+       "      <td>3.019200e+04</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>25%</th>\n",
+       "      <td>1.071821e+09</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>50%</th>\n",
+       "      <td>2.133658e+09</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>75%</th>\n",
+       "      <td>3.211645e+09</td>\n",
+       "      <td>1.000000</td>\n",
+       "      <td>1.000000</td>\n",
+       "      <td>1.000000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>max</th>\n",
+       "      <td>4.294947e+09</td>\n",
+       "      <td>1.000000</td>\n",
+       "      <td>1.000000</td>\n",
+       "      <td>1.000000</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "                 id  winner_model_a  winner_model_b    winner_tie\n",
+       "count  5.747700e+04    57477.000000    57477.000000  57477.000000\n",
+       "mean   2.142564e+09        0.349079        0.341911      0.309011\n",
+       "std    1.238327e+09        0.476683        0.474354      0.462090\n",
+       "min    3.019200e+04        0.000000        0.000000      0.000000\n",
+       "25%    1.071821e+09        0.000000        0.000000      0.000000\n",
+       "50%    2.133658e+09        0.000000        0.000000      0.000000\n",
+       "75%    3.211645e+09        1.000000        1.000000      1.000000\n",
+       "max    4.294947e+09        1.000000        1.000000      1.000000"
+      ]
+     },
+     "execution_count": 10,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "train.describe()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "id": "8d65e3d4",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:45:16.601236Z",
+     "iopub.status.busy": "2024-07-19T18:45:16.600908Z",
+     "iopub.status.idle": "2024-07-19T18:45:16.610681Z",
+     "shell.execute_reply": "2024-07-19T18:45:16.610013Z"
+    },
+    "papermill": {
+     "duration": 0.040012,
+     "end_time": "2024-07-19T18:45:16.612689",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:16.572677",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "winner_a = train[train['winner_model_a']==True]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "id": "c843695e",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:45:16.668376Z",
+     "iopub.status.busy": "2024-07-19T18:45:16.668074Z",
+     "iopub.status.idle": "2024-07-19T18:45:16.675848Z",
+     "shell.execute_reply": "2024-07-19T18:45:16.675160Z"
+    },
+    "papermill": {
+     "duration": 0.037709,
+     "end_time": "2024-07-19T18:45:16.677710",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:16.640001",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "winner_b = train[train['winner_model_b']==True]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "id": "ffbc6967",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:45:16.732675Z",
+     "iopub.status.busy": "2024-07-19T18:45:16.732384Z",
+     "iopub.status.idle": "2024-07-19T18:45:16.743309Z",
+     "shell.execute_reply": "2024-07-19T18:45:16.742368Z"
+    },
+    "papermill": {
+     "duration": 0.040674,
+     "end_time": "2024-07-19T18:45:16.745162",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:16.704488",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "model_a\n",
+       "gpt-4-1106-preview          2019\n",
+       "gpt-4-0613                  1280\n",
+       "gpt-3.5-turbo-0613          1213\n",
+       "gpt-4-0314                  1033\n",
+       "claude-2.1                   896\n",
+       "                            ... \n",
+       "chatglm2-6b                   35\n",
+       "qwen1.5-7b-chat               29\n",
+       "openchat-3.5-0106             28\n",
+       "qwen1.5-4b-chat               19\n",
+       "mistral-7b-instruct-v0.2      15\n",
+       "Name: count, Length: 64, dtype: int64"
+      ]
+     },
+     "execution_count": 13,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "winner_a['model_a'].value_counts()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "id": "c731f2b1",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:45:16.802107Z",
+     "iopub.status.busy": "2024-07-19T18:45:16.801782Z",
+     "iopub.status.idle": "2024-07-19T18:45:16.811675Z",
+     "shell.execute_reply": "2024-07-19T18:45:16.810862Z"
+    },
+    "papermill": {
+     "duration": 0.040063,
+     "end_time": "2024-07-19T18:45:16.813756",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:16.773693",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "model_b\n",
+       "gpt-4-1106-preview          2054\n",
+       "gpt-4-0613                  1170\n",
+       "gpt-3.5-turbo-0613          1168\n",
+       "gpt-4-0314                   960\n",
+       "claude-1                     880\n",
+       "                            ... \n",
+       "chatglm2-6b                   38\n",
+       "openchat-3.5-0106             35\n",
+       "qwen1.5-7b-chat               22\n",
+       "qwen1.5-4b-chat               16\n",
+       "mistral-7b-instruct-v0.2      12\n",
+       "Name: count, Length: 64, dtype: int64"
+      ]
+     },
+     "execution_count": 14,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "winner_b['model_b'].value_counts()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "abaad2f1",
+   "metadata": {
+    "papermill": {
+     "duration": 0.027171,
+     "end_time": "2024-07-19T18:45:16.870667",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:16.843496",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "The top 4 models that won most often as model a or as model b are:\n",
+    "- gpt-4-1106-preview\n",
+    "- gpt-4-0613\n",
+    "- gpt-3.5-turbo-0613\n",
+    "- gpt-4-0314"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "9e27c7e6",
+   "metadata": {
+    "papermill": {
+     "duration": 0.027291,
+     "end_time": "2024-07-19T18:45:16.925187",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:16.897896",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "Since the 'prompt', 'response_a', and 'response_b' features are text, they need to be cleaned:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "id": "dd8bbf5f",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:45:16.981103Z",
+     "iopub.status.busy": "2024-07-19T18:45:16.980528Z",
+     "iopub.status.idle": "2024-07-19T18:45:16.993417Z",
+     "shell.execute_reply": "2024-07-19T18:45:16.992346Z"
+    },
+    "papermill": {
+     "duration": 0.043112,
+     "end_time": "2024-07-19T18:45:16.995360",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:16.952248",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[nltk_data] Downloading package stopwords to /usr/share/nltk_data...\n",
+      "[nltk_data]   Package stopwords is already up-to-date!\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Creating a function to perform cleaning steps at once (Removes numbers and unnecessary characters, makes all letters lowercase, removes stopwords)\n",
+    "nltk.download('stopwords')\n",
+    "stopwords_list = stopwords.words('english')\n",
+    "\n",
+    "no_bad_chars = re.compile('[!\\\"#$%&()*+-./:;<=>?@[\\]^_`{|}~\\n - ]')\n",
+    "# no_nums = re.compile('[\\d-]')\n",
+    "\n",
+    "def clean_text(text):\n",
+    "#     text = no_nums.sub('', text)\n",
+    "    text = no_bad_chars.sub(' ', text)\n",
+    "    text = text.lower()\n",
+    "    text = ' '.join(word for word in text.split() if word not in stopwords_list)\n",
+    "    return text\n",
+    "     "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "id": "a6cac032",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:45:17.050622Z",
+     "iopub.status.busy": "2024-07-19T18:45:17.050331Z",
+     "iopub.status.idle": "2024-07-19T18:45:17.071851Z",
+     "shell.execute_reply": "2024-07-19T18:45:17.071125Z"
+    },
+    "papermill": {
+     "duration": 0.05161,
+     "end_time": "2024-07-19T18:45:17.074044",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:17.022434",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "train_cleaned = train.copy()\n",
+    "train['model_a'] = train['model_a'].astype(str)\n",
+    "train['model_b'] = train['model_b'].astype(str)\n",
+    "train['prompt'] = train['prompt'].astype(str)\n",
+    "train['response_a'] = train['response_a'].astype(str)\n",
+    "train['response_b'] = train['response_b'].astype(str)\n",
+    "\n",
+    "\n",
+    "     "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "id": "7750f6fc",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:45:17.131614Z",
+     "iopub.status.busy": "2024-07-19T18:45:17.131286Z",
+     "iopub.status.idle": "2024-07-19T18:46:23.218203Z",
+     "shell.execute_reply": "2024-07-19T18:46:23.217352Z"
+    },
+    "papermill": {
+     "duration": 66.11833,
+     "end_time": "2024-07-19T18:46:23.220649",
+     "exception": false,
+     "start_time": "2024-07-19T18:45:17.102319",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "#Applying text cleaning function to text columns\n",
+    "\n",
+    "train_cleaned['model_a'] = (train['model_a']).apply(clean_text)\n",
+    "train_cleaned['model_b'] = (train['model_b']).apply(clean_text)\n",
+    "train_cleaned['prompt'] = (train['prompt']).apply(clean_text)\n",
+    "train_cleaned['response_a'] = (train['response_a']).apply(clean_text)\n",
+    "train_cleaned['response_b'] = (train['response_b']).apply(clean_text)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "id": "b5d89fd0",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:46:23.278175Z",
+     "iopub.status.busy": "2024-07-19T18:46:23.277859Z",
+     "iopub.status.idle": "2024-07-19T18:46:23.318530Z",
+     "shell.execute_reply": "2024-07-19T18:46:23.317644Z"
+    },
+    "papermill": {
+     "duration": 0.071101,
+     "end_time": "2024-07-19T18:46:23.320434",
+     "exception": false,
+     "start_time": "2024-07-19T18:46:23.249333",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "False"
+      ]
+     },
+     "execution_count": 18,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "train.isnull().values.any()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "id": "96c61f78",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:46:23.376894Z",
+     "iopub.status.busy": "2024-07-19T18:46:23.376601Z",
+     "iopub.status.idle": "2024-07-19T18:46:23.453571Z",
+     "shell.execute_reply": "2024-07-19T18:46:23.452596Z"
+    },
+    "papermill": {
+     "duration": 0.106959,
+     "end_time": "2024-07-19T18:46:23.455433",
+     "exception": false,
+     "start_time": "2024-07-19T18:46:23.348474",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "25012\n",
+      "0\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(train_cleaned.prompt.str.len().max())\n",
+    "print(train_cleaned.prompt.str.len().min())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "id": "6da7a4a9",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:46:23.512299Z",
+     "iopub.status.busy": "2024-07-19T18:46:23.511704Z",
+     "iopub.status.idle": "2024-07-19T18:46:23.553712Z",
+     "shell.execute_reply": "2024-07-19T18:46:23.552851Z"
+    },
+    "papermill": {
+     "duration": 0.072625,
+     "end_time": "2024-07-19T18:46:23.555874",
+     "exception": false,
+     "start_time": "2024-07-19T18:46:23.483249",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "137"
+      ]
+     },
+     "execution_count": 20,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "len(train_cleaned[train_cleaned.prompt.str.len()==0])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "id": "e263e3f6",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:46:23.613607Z",
+     "iopub.status.busy": "2024-07-19T18:46:23.613303Z",
+     "iopub.status.idle": "2024-07-19T18:46:23.659805Z",
+     "shell.execute_reply": "2024-07-19T18:46:23.658948Z"
+    },
+    "papermill": {
+     "duration": 0.078143,
+     "end_time": "2024-07-19T18:46:23.661883",
+     "exception": false,
+     "start_time": "2024-07-19T18:46:23.583740",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "147"
+      ]
+     },
+     "execution_count": 21,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "len(train_cleaned[train_cleaned.response_a.str.len()==0])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 22,
+   "id": "ab0af7ae",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:46:23.720266Z",
+     "iopub.status.busy": "2024-07-19T18:46:23.719970Z",
+     "iopub.status.idle": "2024-07-19T18:46:23.766362Z",
+     "shell.execute_reply": "2024-07-19T18:46:23.765398Z"
+    },
+    "papermill": {
+     "duration": 0.077168,
+     "end_time": "2024-07-19T18:46:23.768415",
+     "exception": false,
+     "start_time": "2024-07-19T18:46:23.691247",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "131"
+      ]
+     },
+     "execution_count": 22,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "len(train_cleaned[train_cleaned.response_b.str.len()==0])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 23,
+   "id": "215380e6",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:46:23.827427Z",
+     "iopub.status.busy": "2024-07-19T18:46:23.826810Z",
+     "iopub.status.idle": "2024-07-19T18:46:23.949527Z",
+     "shell.execute_reply": "2024-07-19T18:46:23.948714Z"
+    },
+    "papermill": {
+     "duration": 0.153706,
+     "end_time": "2024-07-19T18:46:23.951795",
+     "exception": false,
+     "start_time": "2024-07-19T18:46:23.798089",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "train_cleaned2 = train_cleaned[(train_cleaned.prompt.astype(str).str.len()>0) & (train_cleaned.response_a.astype(str).str.len()>0)& (train_cleaned.response_b.astype(str).str.len()>0)]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "id": "68c0d9f7",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:46:24.010028Z",
+     "iopub.status.busy": "2024-07-19T18:46:24.009406Z",
+     "iopub.status.idle": "2024-07-19T18:46:24.051884Z",
+     "shell.execute_reply": "2024-07-19T18:46:24.050853Z"
+    },
+    "papermill": {
+     "duration": 0.073361,
+     "end_time": "2024-07-19T18:46:24.053981",
+     "exception": false,
+     "start_time": "2024-07-19T18:46:23.980620",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "<class 'pandas.core.frame.DataFrame'>\n",
+      "Index: 57119 entries, 0 to 57476\n",
+      "Data columns (total 9 columns):\n",
+      " #   Column          Non-Null Count  Dtype \n",
+      "---  ------          --------------  ----- \n",
+      " 0   id              57119 non-null  int64 \n",
+      " 1   model_a         57119 non-null  object\n",
+      " 2   model_b         57119 non-null  object\n",
+      " 3   prompt          57119 non-null  object\n",
+      " 4   response_a      57119 non-null  object\n",
+      " 5   response_b      57119 non-null  object\n",
+      " 6   winner_model_a  57119 non-null  int64 \n",
+      " 7   winner_model_b  57119 non-null  int64 \n",
+      " 8   winner_tie      57119 non-null  int64 \n",
+      "dtypes: int64(4), object(5)\n",
+      "memory usage: 4.4+ MB\n"
+     ]
+    }
+   ],
+   "source": [
+    "train_cleaned2.info()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "cd8b1a75",
+   "metadata": {
+    "papermill": {
+     "duration": 0.027776,
+     "end_time": "2024-07-19T18:46:24.110973",
+     "exception": false,
+     "start_time": "2024-07-19T18:46:24.083197",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "## Modeling"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "9ef75556",
+   "metadata": {
+    "papermill": {
+     "duration": 0.027776,
+     "end_time": "2024-07-19T18:46:24.166652",
+     "exception": false,
+     "start_time": "2024-07-19T18:46:24.138876",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "Preparing the data for modeling with multiple outputs:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "id": "28a4bfc1",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:46:24.224022Z",
+     "iopub.status.busy": "2024-07-19T18:46:24.223600Z",
+     "iopub.status.idle": "2024-07-19T18:46:24.227477Z",
+     "shell.execute_reply": "2024-07-19T18:46:24.226671Z"
+    },
+    "papermill": {
+     "duration": 0.03445,
+     "end_time": "2024-07-19T18:46:24.229300",
+     "exception": false,
+     "start_time": "2024-07-19T18:46:24.194850",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# train_cleaned2['combined_text'] = train_cleaned2['prompt'] + ' ' + train_cleaned2['response_a'] + ' ' + train_cleaned2['response_b']\n",
+    "# data = train_cleaned2['combined_text'].map(word_tokenize).values\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 26,
+   "id": "ceebc2c7",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:46:24.287023Z",
+     "iopub.status.busy": "2024-07-19T18:46:24.286498Z",
+     "iopub.status.idle": "2024-07-19T18:49:36.477716Z",
+     "shell.execute_reply": "2024-07-19T18:49:36.476848Z"
+    },
+    "papermill": {
+     "duration": 192.222753,
+     "end_time": "2024-07-19T18:49:36.480227",
+     "exception": false,
+     "start_time": "2024-07-19T18:46:24.257474",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "train_cleaned['combined_text'] = train_cleaned['prompt'] + ' ' + train_cleaned['response_a'] + ' ' + train_cleaned['response_b']\n",
+    "data = train_cleaned['combined_text'].map(word_tokenize).values\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 27,
+   "id": "050a7876",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:49:36.538481Z",
+     "iopub.status.busy": "2024-07-19T18:49:36.538189Z",
+     "iopub.status.idle": "2024-07-19T18:49:38.915385Z",
+     "shell.execute_reply": "2024-07-19T18:49:38.914595Z"
+    },
+    "papermill": {
+     "duration": 2.408563,
+     "end_time": "2024-07-19T18:49:38.917664",
+     "exception": false,
+     "start_time": "2024-07-19T18:49:36.509101",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "total_vocabulary = set(word for prompt in data for word in prompt)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 28,
+   "id": "0ec78f71",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:49:38.975433Z",
+     "iopub.status.busy": "2024-07-19T18:49:38.975144Z",
+     "iopub.status.idle": "2024-07-19T18:49:38.979896Z",
+     "shell.execute_reply": "2024-07-19T18:49:38.979079Z"
+    },
+    "papermill": {
+     "duration": 0.035799,
+     "end_time": "2024-07-19T18:49:38.981960",
+     "exception": false,
+     "start_time": "2024-07-19T18:49:38.946161",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "There are 445532 unique tokens in the dataset.\n"
+     ]
+    }
+   ],
+   "source": [
+    "len(total_vocabulary)\n",
+    "print('There are {} unique tokens in the dataset.'.format(len(total_vocabulary)))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 29,
+   "id": "1a7bf21e",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:49:39.039101Z",
+     "iopub.status.busy": "2024-07-19T18:49:39.038794Z",
+     "iopub.status.idle": "2024-07-19T18:49:39.042530Z",
+     "shell.execute_reply": "2024-07-19T18:49:39.041713Z"
+    },
+    "papermill": {
+     "duration": 0.034238,
+     "end_time": "2024-07-19T18:49:39.044313",
+     "exception": false,
+     "start_time": "2024-07-19T18:49:39.010075",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# train['winner_model_a'] = train['winner_model_a'].astype(int)\n",
+    "# train['winner_model_b'] = train['winner_model_a'].astype(int)\n",
+    "# train['winner_tie'] = train['winner_tie'].astype(int)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 30,
+   "id": "09aaa736",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:49:39.101439Z",
+     "iopub.status.busy": "2024-07-19T18:49:39.101181Z",
+     "iopub.status.idle": "2024-07-19T18:49:39.105027Z",
+     "shell.execute_reply": "2024-07-19T18:49:39.104229Z"
+    },
+    "papermill": {
+     "duration": 0.034375,
+     "end_time": "2024-07-19T18:49:39.106818",
+     "exception": false,
+     "start_time": "2024-07-19T18:49:39.072443",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# train['combined_target'] = train['winner_model_a']  + ','+ train['winner_model_b'] +',' + train['winner_tie']\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "83d612c8",
+   "metadata": {
+    "papermill": {
+     "duration": 0.0282,
+     "end_time": "2024-07-19T18:49:39.162780",
+     "exception": false,
+     "start_time": "2024-07-19T18:49:39.134580",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "We need to create a target that includes all three of the outcomes we are trying to predict (winner_model_a, winner_model_b, winner_tie):"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 31,
+   "id": "51f9caa5",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:49:39.220348Z",
+     "iopub.status.busy": "2024-07-19T18:49:39.220044Z",
+     "iopub.status.idle": "2024-07-19T18:49:39.227582Z",
+     "shell.execute_reply": "2024-07-19T18:49:39.226797Z"
+    },
+    "papermill": {
+     "duration": 0.038901,
+     "end_time": "2024-07-19T18:49:39.229714",
+     "exception": false,
+     "start_time": "2024-07-19T18:49:39.190813",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def target(data):\n",
+    "    y1 = data.pop('winner_model_a')\n",
+    "    y1 = np.array(y1)\n",
+    "    y2 = data.pop('winner_model_b')\n",
+    "    y2 = np.array(y2)\n",
+    "    y3 = data.pop('winner_tie')\n",
+    "    y3 = np.array(y3)\n",
+    "    return y1, y2, y3\n",
+    "\n",
+    "# target = target(train_cleaned2)\n",
+    "target = target(train_cleaned)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 32,
+   "id": "8706bbe9",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:49:39.289239Z",
+     "iopub.status.busy": "2024-07-19T18:49:39.288948Z",
+     "iopub.status.idle": "2024-07-19T18:49:39.294230Z",
+     "shell.execute_reply": "2024-07-19T18:49:39.293437Z"
+    },
+    "papermill": {
+     "duration": 0.03674,
+     "end_time": "2024-07-19T18:49:39.296099",
+     "exception": false,
+     "start_time": "2024-07-19T18:49:39.259359",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "target_t = np.transpose(target)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "68b0fb3f",
+   "metadata": {
+    "papermill": {
+     "duration": 0.028063,
+     "end_time": "2024-07-19T18:49:39.352402",
+     "exception": false,
+     "start_time": "2024-07-19T18:49:39.324339",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "Next, we need to specify the train and test predictors and target values:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 33,
+   "id": "27bb94ee",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:49:39.409585Z",
+     "iopub.status.busy": "2024-07-19T18:49:39.409274Z",
+     "iopub.status.idle": "2024-07-19T18:49:39.413359Z",
+     "shell.execute_reply": "2024-07-19T18:49:39.412556Z"
+    },
+    "papermill": {
+     "duration": 0.034671,
+     "end_time": "2024-07-19T18:49:39.415158",
+     "exception": false,
+     "start_time": "2024-07-19T18:49:39.380487",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# train_size = int(len(train_cleaned2) * .8)\n",
+    "# labels = target_t\n",
+    "\n",
+    "# text_train =  train_cleaned2['combined_text'][:train_size]\n",
+    "\n",
+    "# labels_train = labels[:train_size]\n",
+    "\n",
+    "# labels_test = labels[train_size:]\n",
+    "\n",
+    "# text_test =  train_cleaned2['combined_text'][train_size:]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 34,
+   "id": "89d5cdf9",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:49:39.472770Z",
+     "iopub.status.busy": "2024-07-19T18:49:39.472495Z",
+     "iopub.status.idle": "2024-07-19T18:49:39.477716Z",
+     "shell.execute_reply": "2024-07-19T18:49:39.476901Z"
+    },
+    "papermill": {
+     "duration": 0.036369,
+     "end_time": "2024-07-19T18:49:39.479663",
+     "exception": false,
+     "start_time": "2024-07-19T18:49:39.443294",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "train_size = int(len(train_cleaned) * .8)\n",
+    "labels = target_t\n",
+    "\n",
+    "text_train =  train_cleaned['combined_text'][:train_size]\n",
+    "\n",
+    "labels_train = labels[:train_size]\n",
+    "\n",
+    "labels_test = labels[train_size:]\n",
+    "\n",
+    "text_test =  train_cleaned['combined_text'][train_size:]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "25932054",
+   "metadata": {
+    "papermill": {
+     "duration": 0.027837,
+     "end_time": "2024-07-19T18:49:39.535843",
+     "exception": false,
+     "start_time": "2024-07-19T18:49:39.508006",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "The text features need to be tokenized so that they can be interpreted by our model:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 35,
+   "id": "7350f8ed",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:49:39.594469Z",
+     "iopub.status.busy": "2024-07-19T18:49:39.594142Z",
+     "iopub.status.idle": "2024-07-19T18:50:02.126288Z",
+     "shell.execute_reply": "2024-07-19T18:50:02.125472Z"
+    },
+    "papermill": {
+     "duration": 22.564417,
+     "end_time": "2024-07-19T18:50:02.128595",
+     "exception": false,
+     "start_time": "2024-07-19T18:49:39.564178",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "#tokenize\n",
+    "tokenizer = text.Tokenizer(num_words=20000)\n",
+    "tokenizer.fit_on_texts(list(text_train))\n",
+    "list_tokenized_prmpt_rsps = tokenizer.texts_to_sequences(text_train)\n",
+    "X_t = sequence.pad_sequences(list_tokenized_prmpt_rsps, maxlen=1000)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 36,
+   "id": "1aba454a",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:02.187939Z",
+     "iopub.status.busy": "2024-07-19T18:50:02.187399Z",
+     "iopub.status.idle": "2024-07-19T18:50:08.112910Z",
+     "shell.execute_reply": "2024-07-19T18:50:08.111879Z"
+    },
+    "papermill": {
+     "duration": 5.957551,
+     "end_time": "2024-07-19T18:50:08.115448",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:02.157897",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "tokenizer.fit_on_texts(list(text_test))\n",
+    "list_tokenized_prmpt_rsps_test = tokenizer.texts_to_sequences(text_test)\n",
+    "X_t_test = sequence.pad_sequences(list_tokenized_prmpt_rsps_test, maxlen=1000)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 37,
+   "id": "30c9b147",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:08.174307Z",
+     "iopub.status.busy": "2024-07-19T18:50:08.173712Z",
+     "iopub.status.idle": "2024-07-19T18:50:08.178672Z",
+     "shell.execute_reply": "2024-07-19T18:50:08.177752Z"
+    },
+    "papermill": {
+     "duration": 0.036242,
+     "end_time": "2024-07-19T18:50:08.180545",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:08.144303",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# #Trying OneVsRest method of multioutput classification from sklearn\n",
+    "\n",
+    "# #Multioutput classifier wrapper on log reg\n",
+    "# # from sklearn.datasets import make_multilabel_classification\n",
+    "# from sklearn.model_selection import train_test_split\n",
+    "# from sklearn.multioutput import MultiOutputClassifier\n",
+    "# from sklearn.multioutput import ClassifierChain\n",
+    "# from sklearn.linear_model import LogisticRegression\n",
+    "\n",
+    "\n",
+    "# from sklearn.multiclass import OneVsRestClassifier\n",
+    "# lr = LogisticRegression()\n",
+    "# classifier1 = ClassifierChain(lr)\n",
+    "# # Creating the MultiOutput Classifier with Logistic Regression as the base estimator\n",
+    "# # classifier1 = MultiOutputClassifier(LogisticRegression())\n",
+    "\n",
+    "# # Fitting the classifier on the training data\n",
+    "# # classifier1.fit(X_t, labels_train)\n",
+    "\n",
+    "# # Making predictions on the test set\n",
+    "# # predictions1 = classifier1.predict_proba(X_t_test)\n",
+    "\n",
+    "# base_lr = LogisticRegression(random_state=0)\n",
+    "# chain = ClassifierChain(base_lr, order='random', random_state=0)\n",
+    "# preds_c = chain.fit(X_t, labels_train).predict_proba(X_t_test)\n",
+    "# # preds = classifier1.predict(X_t_test)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 38,
+   "id": "6052597c",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:08.238354Z",
+     "iopub.status.busy": "2024-07-19T18:50:08.238058Z",
+     "iopub.status.idle": "2024-07-19T18:50:08.242534Z",
+     "shell.execute_reply": "2024-07-19T18:50:08.241664Z"
+    },
+    "papermill": {
+     "duration": 0.035774,
+     "end_time": "2024-07-19T18:50:08.244533",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:08.208759",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# #Trying ClassifierChain method of multioutput classification from sklearn\n",
+    "# from sklearn.multioutput import ClassifierChain\n",
+    "# from sklearn.metrics import jaccard_score\n",
+    "# max_iter=10\n",
+    "\n",
+    "# chains = [ClassifierChain(base_lr, order=\"random\", random_state=i) for i in range(10)]\n",
+    "# for chain in chains:\n",
+    "#     chain.fit(X_t, labels_train)\n",
+    "\n",
+    "# Y_pred_chains = np.array([chain.predict_proba(X_t_test) for chain in chains])\n",
+    "# chain_jaccard_scores = [\n",
+    "#     jaccard_score(labels_test, Y_pred_chain >= 0.5, average=\"samples\")\n",
+    "#     for Y_pred_chain in Y_pred_chains\n",
+    "# ]\n",
+    "\n",
+    "# Y_pred_ensemble = Y_pred_chains.mean(axis=0)\n",
+    "# ensemble_jaccard_score = jaccard_score(\n",
+    "#     labels_test, Y_pred_ensemble >= 0.5, average=\"samples\"\n",
+    "# )"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 39,
+   "id": "d9b1ba3c",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:08.302994Z",
+     "iopub.status.busy": "2024-07-19T18:50:08.302396Z",
+     "iopub.status.idle": "2024-07-19T18:50:08.306224Z",
+     "shell.execute_reply": "2024-07-19T18:50:08.305365Z"
+    },
+    "papermill": {
+     "duration": 0.035159,
+     "end_time": "2024-07-19T18:50:08.308081",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:08.272922",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# preds_c"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 40,
+   "id": "ab759f95",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:08.365781Z",
+     "iopub.status.busy": "2024-07-19T18:50:08.365514Z",
+     "iopub.status.idle": "2024-07-19T18:50:08.369473Z",
+     "shell.execute_reply": "2024-07-19T18:50:08.368606Z"
+    },
+    "papermill": {
+     "duration": 0.034971,
+     "end_time": "2024-07-19T18:50:08.371393",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:08.336422",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# from sklearn.linear_model import LogisticRegression\n",
+    "# from sklearn.model_selection import train_test_split\n",
+    "# from sklearn.multioutput import ClassifierChain\n",
+    "\n",
+    "# base_lr = LogisticRegression(solver='lbfgs', random_state=0)\n",
+    "# chain = ClassifierChain(base_lr, order='random', random_state=0, chain_method='predict')\n",
+    "# chain.fit(X_t, labels_train).predict(X_t_test)\n",
+    "# chain.predict_proba(X_t_test)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 41,
+   "id": "49469326",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:08.430351Z",
+     "iopub.status.busy": "2024-07-19T18:50:08.430065Z",
+     "iopub.status.idle": "2024-07-19T18:50:08.433714Z",
+     "shell.execute_reply": "2024-07-19T18:50:08.432872Z"
+    },
+    "papermill": {
+     "duration": 0.034587,
+     "end_time": "2024-07-19T18:50:08.435692",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:08.401105",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# probas = classifier1.predict_proba(X_t_test)\n",
+    "# probas"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 42,
+   "id": "48742f6f",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:08.492566Z",
+     "iopub.status.busy": "2024-07-19T18:50:08.492303Z",
+     "iopub.status.idle": "2024-07-19T18:50:08.496165Z",
+     "shell.execute_reply": "2024-07-19T18:50:08.495261Z"
+    },
+    "papermill": {
+     "duration": 0.034516,
+     "end_time": "2024-07-19T18:50:08.498079",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:08.463563",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# preds = classifier1.predict(X_t_test)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 43,
+   "id": "6a7e781a",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:08.555036Z",
+     "iopub.status.busy": "2024-07-19T18:50:08.554731Z",
+     "iopub.status.idle": "2024-07-19T18:50:08.558346Z",
+     "shell.execute_reply": "2024-07-19T18:50:08.557536Z"
+    },
+    "papermill": {
+     "duration": 0.034105,
+     "end_time": "2024-07-19T18:50:08.560187",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:08.526082",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# preds"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 44,
+   "id": "3803fc80",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:08.617437Z",
+     "iopub.status.busy": "2024-07-19T18:50:08.617170Z",
+     "iopub.status.idle": "2024-07-19T18:50:08.620677Z",
+     "shell.execute_reply": "2024-07-19T18:50:08.619898Z"
+    },
+    "papermill": {
+     "duration": 0.034299,
+     "end_time": "2024-07-19T18:50:08.622489",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:08.588190",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# log_loss(preds,labels_test)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 45,
+   "id": "87139da9",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:08.679429Z",
+     "iopub.status.busy": "2024-07-19T18:50:08.679141Z",
+     "iopub.status.idle": "2024-07-19T18:50:08.683313Z",
+     "shell.execute_reply": "2024-07-19T18:50:08.682471Z"
+    },
+    "papermill": {
+     "duration": 0.034739,
+     "end_time": "2024-07-19T18:50:08.685106",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:08.650367",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# #Multioutput classifier wrapper on random forest\n",
+    "# # from sklearn.datasets import make_multilabel_classification\n",
+    "# from sklearn.model_selection import train_test_split\n",
+    "# from sklearn.multioutput import MultiOutputClassifier\n",
+    "# from sklearn.linear_model import LogisticRegression\n",
+    "\n",
+    "# # Creating the MultiOutput Classifier with Logistic Regression as the base estimator\n",
+    "# classifier2 = MultiOutputClassifier(RandomForestClassifier())\n",
+    "\n",
+    "# # Fitting the classifier on the training data\n",
+    "# classifier2.fit(X_t, labels_train)\n",
+    "\n",
+    "# # Making predictions on the test set\n",
+    "# # predictions2 = classifier.predict_proba(X_t_test)\n",
+    " \n",
+    "\n",
+    "# # print(log_loss(predictions, labels_test))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 46,
+   "id": "ad838393",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:08.742648Z",
+     "iopub.status.busy": "2024-07-19T18:50:08.742369Z",
+     "iopub.status.idle": "2024-07-19T18:50:08.745891Z",
+     "shell.execute_reply": "2024-07-19T18:50:08.745062Z"
+    },
+    "papermill": {
+     "duration": 0.034257,
+     "end_time": "2024-07-19T18:50:08.747716",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:08.713459",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# probas2 = classifier2.predict_proba(X_t_test)\n",
+    "# probas2"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 47,
+   "id": "218edbba",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:08.804506Z",
+     "iopub.status.busy": "2024-07-19T18:50:08.804251Z",
+     "iopub.status.idle": "2024-07-19T18:50:08.807774Z",
+     "shell.execute_reply": "2024-07-19T18:50:08.806997Z"
+    },
+    "papermill": {
+     "duration": 0.034101,
+     "end_time": "2024-07-19T18:50:08.809641",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:08.775540",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# preds2 = classifier2.predict(X_t_test)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 48,
+   "id": "4922a378",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:08.866533Z",
+     "iopub.status.busy": "2024-07-19T18:50:08.866265Z",
+     "iopub.status.idle": "2024-07-19T18:50:08.869878Z",
+     "shell.execute_reply": "2024-07-19T18:50:08.869080Z"
+    },
+    "papermill": {
+     "duration": 0.03404,
+     "end_time": "2024-07-19T18:50:08.871665",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:08.837625",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# preds2"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 49,
+   "id": "19a715cd",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:08.930992Z",
+     "iopub.status.busy": "2024-07-19T18:50:08.930666Z",
+     "iopub.status.idle": "2024-07-19T18:50:09.782927Z",
+     "shell.execute_reply": "2024-07-19T18:50:09.781884Z"
+    },
+    "papermill": {
+     "duration": 0.885828,
+     "end_time": "2024-07-19T18:50:09.785405",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:08.899577",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# trying out a sequential model (source: https://discuss.tensorflow.org/t/loss-involving-multiple-outputs/22449/3)\n",
+    "model_seq = Sequential([\n",
+    "    Dense(128, activation='relu', input_shape=(len(np.transpose(X_t)),)),\n",
+    "    Dense(units=50, name='out1', activation='softmax'),\n",
+    "    Dense(units=30, name='out2', activation='sigmoid'),\n",
+    "    Dense(units=10, name='out3', activation='sigmoid'),\n",
+    "    Dense(units=3, name='final', activation='softmax')\n",
+    "])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 50,
+   "id": "a02a1475",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:09.844316Z",
+     "iopub.status.busy": "2024-07-19T18:50:09.843987Z",
+     "iopub.status.idle": "2024-07-19T18:50:09.864219Z",
+     "shell.execute_reply": "2024-07-19T18:50:09.863394Z"
+    },
+    "papermill": {
+     "duration": 0.051781,
+     "end_time": "2024-07-19T18:50:09.866189",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:09.814408",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "losses = {'final': 'binary_crossentropy'}\n",
+    "model_seq.compile(optimizer='adam', loss=losses)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 51,
+   "id": "3a994ae5",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:09.925577Z",
+     "iopub.status.busy": "2024-07-19T18:50:09.925208Z",
+     "iopub.status.idle": "2024-07-19T18:50:31.534762Z",
+     "shell.execute_reply": "2024-07-19T18:50:31.533627Z"
+    },
+    "papermill": {
+     "duration": 21.642022,
+     "end_time": "2024-07-19T18:50:31.537181",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:09.895159",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Epoch 1/5\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "WARNING: All log messages before absl::InitializeLog() is called are written to STDERR\n",
+      "I0000 00:00:1721415012.430964      73 device_compiler.h:186] Compiled cluster using XLA!  This line is logged at most once for the lifetime of the process.\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "736/736 [==============================] - 6s 4ms/step - loss: 0.6489 - val_loss: 0.6362\n",
+      "Epoch 2/5\n",
+      "736/736 [==============================] - 3s 4ms/step - loss: 0.6359 - val_loss: 0.6365\n",
+      "Epoch 3/5\n",
+      "736/736 [==============================] - 3s 4ms/step - loss: 0.6360 - val_loss: 0.6361\n",
+      "Epoch 4/5\n",
+      "736/736 [==============================] - 3s 4ms/step - loss: 0.6359 - val_loss: 0.6361\n",
+      "Epoch 5/5\n",
+      "736/736 [==============================] - 3s 4ms/step - loss: 0.6359 - val_loss: 0.6363\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "<keras.src.callbacks.History at 0x7b636523a950>"
+      ]
+     },
+     "execution_count": 51,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "model_seq.fit(X_t, labels_train, batch_size=50, epochs=5, validation_split=0.2)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 52,
+   "id": "c3321b67",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:31.641483Z",
+     "iopub.status.busy": "2024-07-19T18:50:31.641106Z",
+     "iopub.status.idle": "2024-07-19T18:50:32.290445Z",
+     "shell.execute_reply": "2024-07-19T18:50:32.289513Z"
+    },
+    "papermill": {
+     "duration": 0.700384,
+     "end_time": "2024-07-19T18:50:32.292546",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:31.592162",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "360/360 [==============================] - 1s 1ms/step - loss: 0.0000e+00\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "0.0"
+      ]
+     },
+     "execution_count": 52,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "#loss is 0??\n",
+    "model_seq.evaluate(X_t_test)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 53,
+   "id": "ba6deb57",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:32.392407Z",
+     "iopub.status.busy": "2024-07-19T18:50:32.392071Z",
+     "iopub.status.idle": "2024-07-19T18:50:33.355156Z",
+     "shell.execute_reply": "2024-07-19T18:50:33.354273Z"
+    },
+    "papermill": {
+     "duration": 1.014941,
+     "end_time": "2024-07-19T18:50:33.357490",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:32.342549",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "360/360 [==============================] - 1s 2ms/step\n"
+     ]
+    }
+   ],
+   "source": [
+    "pred_seq = model_seq.predict(X_t_test)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 54,
+   "id": "525f3fce",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:33.458886Z",
+     "iopub.status.busy": "2024-07-19T18:50:33.458077Z",
+     "iopub.status.idle": "2024-07-19T18:50:33.464735Z",
+     "shell.execute_reply": "2024-07-19T18:50:33.463871Z"
+    },
+    "papermill": {
+     "duration": 0.058545,
+     "end_time": "2024-07-19T18:50:33.466695",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:33.408150",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([[0.36796921, 0.3258063 , 0.30622452],\n",
+       "       [0.36796921, 0.3258063 , 0.30622452],\n",
+       "       [0.36796921, 0.3258063 , 0.30622452],\n",
+       "       ...,\n",
+       "       [0.36796921, 0.3258063 , 0.30622452],\n",
+       "       [0.36796921, 0.3258063 , 0.30622452],\n",
+       "       [0.36796921, 0.3258063 , 0.30622452]], dtype=float32)"
+      ]
+     },
+     "execution_count": 54,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "#outputs all same values when you specify epochs, val split, or  batch size\n",
+    "pred_seq"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 55,
+   "id": "ed8ad257",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:33.566669Z",
+     "iopub.status.busy": "2024-07-19T18:50:33.566326Z",
+     "iopub.status.idle": "2024-07-19T18:50:33.571021Z",
+     "shell.execute_reply": "2024-07-19T18:50:33.570135Z"
+    },
+    "papermill": {
+     "duration": 0.056228,
+     "end_time": "2024-07-19T18:50:33.572841",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:33.516613",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# #method not working (score error)\n",
+    "# model1 = Sequential()\n",
+    "# model1.add(Dense(128, activation='relu', input_shape=(len(np.transpose(X_t)),)))\n",
+    "# model1.add(Dropout(0.1))\n",
+    "# model1.add(Dense(64, activation='relu'))\n",
+    "# model1.add(Dropout(0.1))\n",
+    "# model1.add(Dense(32, activation='relu'))\n",
+    "# model1.add(Dropout(0.1))\n",
+    "# model1.add(Dense((labels_train.shape[1]), activation='softmax')) # <-- Notice activation in final layer.\n",
+    "\n",
+    "\n",
+    "\n",
+    "# model1.compile(metrics = 'accuracy',\n",
+    "#                loss='binary_crossentropy', # <-- Notice loss function.\n",
+    "#               optimizer='adam',\n",
+    "#               score=(cross_val_score(model1, data, target_t, cv=2).mean()))\n",
+    "# # scorer = check_scoring(model1, scoring=score)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 56,
+   "id": "4c77043e",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:33.671892Z",
+     "iopub.status.busy": "2024-07-19T18:50:33.671567Z",
+     "iopub.status.idle": "2024-07-19T18:50:33.675852Z",
+     "shell.execute_reply": "2024-07-19T18:50:33.674958Z"
+    },
+    "papermill": {
+     "duration": 0.056253,
+     "end_time": "2024-07-19T18:50:33.677841",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:33.621588",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# # Attempt to fix score error\n",
+    "# def my_scorer(clf, X, y_true):\n",
+    "#     class_labels = clf.classes_\n",
+    "#     y_pred_proba = clf.predict_proba(X)\n",
+    "#     error = ...\n",
+    "#     return error\n",
+    "\n",
+    "# gs = GridSearchCV(estimator=KNeighborsClassifier(),\n",
+    "#                   param_grid=[{'n_neighbors': [6]}],\n",
+    "#                   cv=5,\n",
+    "#                   scoring=my_scorer)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 57,
+   "id": "24d8562b",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:33.777197Z",
+     "iopub.status.busy": "2024-07-19T18:50:33.776906Z",
+     "iopub.status.idle": "2024-07-19T18:50:33.780871Z",
+     "shell.execute_reply": "2024-07-19T18:50:33.779985Z"
+    },
+    "papermill": {
+     "duration": 0.05621,
+     "end_time": "2024-07-19T18:50:33.782840",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:33.726630",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# print(cross_val_score(model1, X_t, labels_train, cv=3))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 58,
+   "id": "84dec801",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:33.881333Z",
+     "iopub.status.busy": "2024-07-19T18:50:33.881032Z",
+     "iopub.status.idle": "2024-07-19T18:50:33.884999Z",
+     "shell.execute_reply": "2024-07-19T18:50:33.884084Z"
+    },
+    "papermill": {
+     "duration": 0.055148,
+     "end_time": "2024-07-19T18:50:33.886883",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:33.831735",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# cv_results = cross_validate(estimator=estimator,\n",
+    "#                             X=X,\n",
+    "#                             error_score=error_score,\n",
+    "# )\n",
+    "# cv_results[\"test_score\"]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 59,
+   "id": "2d823adc",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:33.999745Z",
+     "iopub.status.busy": "2024-07-19T18:50:33.998966Z",
+     "iopub.status.idle": "2024-07-19T18:50:34.003378Z",
+     "shell.execute_reply": "2024-07-19T18:50:34.002375Z"
+    },
+    "papermill": {
+     "duration": 0.064771,
+     "end_time": "2024-07-19T18:50:34.005677",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:33.940906",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# scores = [(cross_val_score(model1, data, target_t, cv=2).mean())]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 60,
+   "id": "12c22d26",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:34.120429Z",
+     "iopub.status.busy": "2024-07-19T18:50:34.120106Z",
+     "iopub.status.idle": "2024-07-19T18:50:34.124513Z",
+     "shell.execute_reply": "2024-07-19T18:50:34.123575Z"
+    },
+    "papermill": {
+     "duration": 0.063853,
+     "end_time": "2024-07-19T18:50:34.126705",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:34.062852",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# model1.fit(X_t, labels_train, epochs=10, batch_size=100, validation_split=0.2)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 61,
+   "id": "7994a657",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:34.231929Z",
+     "iopub.status.busy": "2024-07-19T18:50:34.231616Z",
+     "iopub.status.idle": "2024-07-19T18:50:34.235477Z",
+     "shell.execute_reply": "2024-07-19T18:50:34.234617Z"
+    },
+    "papermill": {
+     "duration": 0.056598,
+     "end_time": "2024-07-19T18:50:34.237369",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:34.180771",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# model1.evaluate(X_t_test, labels_test)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 62,
+   "id": "7cf2bb47",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:34.336151Z",
+     "iopub.status.busy": "2024-07-19T18:50:34.335501Z",
+     "iopub.status.idle": "2024-07-19T18:50:34.339307Z",
+     "shell.execute_reply": "2024-07-19T18:50:34.338412Z"
+    },
+    "papermill": {
+     "duration": 0.054912,
+     "end_time": "2024-07-19T18:50:34.341214",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:34.286302",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# predictions_ = model1.predict(X_t_test)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 63,
+   "id": "52dcb189",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:34.440166Z",
+     "iopub.status.busy": "2024-07-19T18:50:34.439882Z",
+     "iopub.status.idle": "2024-07-19T18:50:34.443713Z",
+     "shell.execute_reply": "2024-07-19T18:50:34.442848Z"
+    },
+    "papermill": {
+     "duration": 0.05561,
+     "end_time": "2024-07-19T18:50:34.445530",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:34.389920",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# predictions_[:10]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 64,
+   "id": "2b76eac0",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:34.546303Z",
+     "iopub.status.busy": "2024-07-19T18:50:34.546011Z",
+     "iopub.status.idle": "2024-07-19T18:50:34.549689Z",
+     "shell.execute_reply": "2024-07-19T18:50:34.548869Z"
+    },
+    "papermill": {
+     "duration": 0.055989,
+     "end_time": "2024-07-19T18:50:34.551592",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:34.495603",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# softmax_layer = keras.layers.activations.Softmax()\n",
+    "# input = np.array([1.0, 2.0, 1.0])\n",
+    "# result = softmax_layer(input)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 65,
+   "id": "d766e7c1",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:34.651047Z",
+     "iopub.status.busy": "2024-07-19T18:50:34.650747Z",
+     "iopub.status.idle": "2024-07-19T18:50:34.655542Z",
+     "shell.execute_reply": "2024-07-19T18:50:34.654858Z"
+    },
+    "papermill": {
+     "duration": 0.056824,
+     "end_time": "2024-07-19T18:50:34.657395",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:34.600571",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "from keras.layers import Softmax"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 66,
+   "id": "3d52f0db",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:34.757413Z",
+     "iopub.status.busy": "2024-07-19T18:50:34.756584Z",
+     "iopub.status.idle": "2024-07-19T18:50:34.761409Z",
+     "shell.execute_reply": "2024-07-19T18:50:34.760626Z"
+    },
+    "papermill": {
+     "duration": 0.056628,
+     "end_time": "2024-07-19T18:50:34.763301",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:34.706673",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# #experiment 1\n",
+    "# input_layer = Input(shape=(len(np.transpose(X_t)),))\n",
+    "# embedding_size = 128\n",
+    "# embedding = layers.Embedding(20000, embedding_size)\n",
+    "\n",
+    "# first_dense = Dense(units=128, activation='relu')(input_layer)\n",
+    "# second_dense = Dense(units=128, activation='relu')(first_dense)\n",
+    "\n",
+    "# y1_output = Dense(units=1, name='y1_output')(second_dense)\n",
+    "# third_dense = Dense(units=64, activation='relu')(y1_output)\n",
+    "\n",
+    "# y2_output = Dense(units=1, name='y2_output')(third_dense)\n",
+    "# fourth_dense = Dense(units=32, activation='softmax')(y2_output)\n",
+    "\n",
+    "# y3_output = Dense(units=1, name='y3_output')(fourth_dense)\n",
+    "\n",
+    "# # y1 = Activation('softmax')(y1_output) \n",
+    "# # y2 = Activation('softmax')(y2_output)\n",
+    "# # y3 = Activation('softmax')(y3_output)\n",
+    "# # y_ = Concatenate([y1, y2, y3])\n",
+    "\n",
+    "# model__ = Model(inputs=input_layer, outputs=[y1_output, y2_output, y3_output])\n",
+    "\n",
+    "# print(model__.summary())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 67,
+   "id": "2e450099",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:34.866273Z",
+     "iopub.status.busy": "2024-07-19T18:50:34.865964Z",
+     "iopub.status.idle": "2024-07-19T18:50:34.870909Z",
+     "shell.execute_reply": "2024-07-19T18:50:34.869980Z"
+    },
+    "papermill": {
+     "duration": 0.059259,
+     "end_time": "2024-07-19T18:50:34.872810",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:34.813551",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "\n",
+    "# #experiment 2\n",
+    "# input_layer = Input(shape=(len(np.transpose(X_t)),))\n",
+    "# embedding_size = 128\n",
+    "# embedding = layers.Embedding(20000, embedding_size)\n",
+    "\n",
+    "# first_dense = Dense(units=128, activation='relu')(input_layer)\n",
+    "# # second_dense = Dense(units=128, activation='relu')(first_dense)\n",
+    "\n",
+    "# y1_output = Dense(units=3, name='y1_output')(first_dense)\n",
+    "# # third_dense = Dense(units=64, activation='relu')(y1_output)\n",
+    "\n",
+    "# y2_output = Dense(units=3, name='y2_output')(y1_output)\n",
+    "# # fourth_dense = Dense(units=32, activation='softmax')(y2_output)\n",
+    "\n",
+    "# y3_output = Dense(units=3, name='y3_output', activation='softmax')(y2_output)\n",
+    "\n",
+    "# # output = layers.Activation('softmax')(y3_output)\n",
+    "\n",
+    "# # y1 = Activation('softmax')(y1_output) \n",
+    "# # y2 = Activation('softmax')(y2_output)\n",
+    "# # y3 = Activation('softmax')(y3_output)\n",
+    "# # y_ = layers.Concatenate([y1, y2, y3])\n",
+    "# # sm_layer = Softmax()\n",
+    "# # ,  activation='softmax'\n",
+    "# # softmax_layer = Softmax()\n",
+    "# # sm_input = softmax_layer(input_layer)\n",
+    "# model_ = Model(inputs=input_layer, outputs=[y1_output, y2_output, y3_output])\n",
+    "\n",
+    "# print(model_.summary())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 68,
+   "id": "5256c192",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:34.976929Z",
+     "iopub.status.busy": "2024-07-19T18:50:34.976612Z",
+     "iopub.status.idle": "2024-07-19T18:50:34.981712Z",
+     "shell.execute_reply": "2024-07-19T18:50:34.980771Z"
+    },
+    "papermill": {
+     "duration": 0.059036,
+     "end_time": "2024-07-19T18:50:34.983811",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:34.924775",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# # from keras.layers.merge import Concatenate\n",
+    "# input_layer = Input(shape=(len(np.transpose(X_t)),))\n",
+    "# embedding_size = 128\n",
+    "# embedding = layers.Embedding(20000, embedding_size)\n",
+    "\n",
+    "# first_dense = Dense(units=128, activation='relu')(input_layer)\n",
+    "# second_dense = Dense(units=128, activation='relu')(first_dense)\n",
+    "\n",
+    "# y1_output = Dense(units=1, name='y1_output')(second_dense)\n",
+    "# third_dense = Dense(units=64, activation='relu')(second_dense)\n",
+    "\n",
+    "# y2_output = Dense(units=1, name='y2_output')(third_dense)\n",
+    "# fourth_dense = Dense(units=32, activation='relu')(third_dense)\n",
+    "\n",
+    "# y3_output = Dense(units=1, name='y3_output', activation='softmax')(fourth_dense)\n",
+    "# y_ = layers.Concatenate([y1_output, y2_output, y3_output])\n",
+    "# y_ = Dense(3, activation='softmax')(y_)\n",
+    "# model_ = Model(inputs=input_layer, outputs=y_)\n",
+    "\n",
+    "# print(model_.summary())\n",
+    "\n",
+    "# # bow_input1 = layers.Input(shape=(vocab_size,))\n",
+    "# # bow_input2 = layers.Input(shape=(vocab_size,))\n",
+    "# # bow_input3 = layers.Input(shape=(vocab_size,))\n",
+    "# # merged_layer = layers.concatenate([bow_input1, bow_input2, bow_input3])\n",
+    "# # merged_layer = layers.Dense(256, activation='softmax')(merged_layer)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 69,
+   "id": "268c90a4",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:35.085841Z",
+     "iopub.status.busy": "2024-07-19T18:50:35.085477Z",
+     "iopub.status.idle": "2024-07-19T18:50:35.089564Z",
+     "shell.execute_reply": "2024-07-19T18:50:35.088664Z"
+    },
+    "papermill": {
+     "duration": 0.056946,
+     "end_time": "2024-07-19T18:50:35.091626",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:35.034680",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# model__.compile(optimizer='adam', \n",
+    "#               loss=['BinaryCrossentropy', 'BinaryCrossentropy', 'BinaryCrossentropy'])\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 70,
+   "id": "41cab7cf",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:35.191734Z",
+     "iopub.status.busy": "2024-07-19T18:50:35.190916Z",
+     "iopub.status.idle": "2024-07-19T18:50:35.194924Z",
+     "shell.execute_reply": "2024-07-19T18:50:35.194037Z"
+    },
+    "papermill": {
+     "duration": 0.056166,
+     "end_time": "2024-07-19T18:50:35.196916",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:35.140750",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# model__.fit(X_t, labels_train, epochs=5, batch_size=64, validation_split=0.2)\n",
+    "# #, batch_size=32 , validation_split=0.1"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 71,
+   "id": "c43a483d",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:35.296729Z",
+     "iopub.status.busy": "2024-07-19T18:50:35.296176Z",
+     "iopub.status.idle": "2024-07-19T18:50:35.300513Z",
+     "shell.execute_reply": "2024-07-19T18:50:35.299773Z"
+    },
+    "papermill": {
+     "duration": 0.056497,
+     "end_time": "2024-07-19T18:50:35.302399",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:35.245902",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# model__.evaluate(X_t_test, labels_test)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 72,
+   "id": "1259fa0f",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:35.400998Z",
+     "iopub.status.busy": "2024-07-19T18:50:35.400377Z",
+     "iopub.status.idle": "2024-07-19T18:50:35.404227Z",
+     "shell.execute_reply": "2024-07-19T18:50:35.403438Z"
+    },
+    "papermill": {
+     "duration": 0.054721,
+     "end_time": "2024-07-19T18:50:35.406064",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:35.351343",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# predictions__ = model__.predict(X_t_test)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 73,
+   "id": "b1e8af52",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:35.505523Z",
+     "iopub.status.busy": "2024-07-19T18:50:35.505249Z",
+     "iopub.status.idle": "2024-07-19T18:50:35.508986Z",
+     "shell.execute_reply": "2024-07-19T18:50:35.508117Z"
+    },
+    "papermill": {
+     "duration": 0.056058,
+     "end_time": "2024-07-19T18:50:35.510820",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:35.454762",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# print(np.transpose(predictions__))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 74,
+   "id": "c2712407",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:35.608633Z",
+     "iopub.status.busy": "2024-07-19T18:50:35.608348Z",
+     "iopub.status.idle": "2024-07-19T18:50:35.612180Z",
+     "shell.execute_reply": "2024-07-19T18:50:35.611239Z"
+    },
+    "papermill": {
+     "duration": 0.054817,
+     "end_time": "2024-07-19T18:50:35.614115",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:35.559298",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# model_.compile(optimizer='adam', \n",
+    "#               loss=['BinaryCrossentropy', 'BinaryCrossentropy', 'BinaryCrossentropy'])\n",
+    "# model_.fit(X_t, labels_train, epochs=5, batch_size=64, validation_split=0.2)\n",
+    "# #, batch_size=32 , validation_split=0.1"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 75,
+   "id": "ae2ffa41",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:35.712260Z",
+     "iopub.status.busy": "2024-07-19T18:50:35.711969Z",
+     "iopub.status.idle": "2024-07-19T18:50:35.715676Z",
+     "shell.execute_reply": "2024-07-19T18:50:35.714799Z"
+    },
+    "papermill": {
+     "duration": 0.054599,
+     "end_time": "2024-07-19T18:50:35.717627",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:35.663028",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# model_.evaluate(X_t_test, labels_test)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 76,
+   "id": "c6c0bf81",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:35.815619Z",
+     "iopub.status.busy": "2024-07-19T18:50:35.815317Z",
+     "iopub.status.idle": "2024-07-19T18:50:35.819013Z",
+     "shell.execute_reply": "2024-07-19T18:50:35.818088Z"
+    },
+    "papermill": {
+     "duration": 0.05475,
+     "end_time": "2024-07-19T18:50:35.820976",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:35.766226",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# predictions_ = model_.predict(X_t_test)\n",
+    "# predictions_"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 77,
+   "id": "41dfd70c",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:35.919867Z",
+     "iopub.status.busy": "2024-07-19T18:50:35.919559Z",
+     "iopub.status.idle": "2024-07-19T18:50:35.923424Z",
+     "shell.execute_reply": "2024-07-19T18:50:35.922500Z"
+    },
+    "papermill": {
+     "duration": 0.055504,
+     "end_time": "2024-07-19T18:50:35.925414",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:35.869910",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# print(np.transpose(predictions_))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 78,
+   "id": "a2994587",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:36.025687Z",
+     "iopub.status.busy": "2024-07-19T18:50:36.025107Z",
+     "iopub.status.idle": "2024-07-19T18:50:36.142506Z",
+     "shell.execute_reply": "2024-07-19T18:50:36.141512Z"
+    },
+    "papermill": {
+     "duration": 0.17257,
+     "end_time": "2024-07-19T18:50:36.147550",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:35.974980",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Model: \"model\"\n",
+      "_________________________________________________________________\n",
+      " Layer (type)                Output Shape              Param #   \n",
+      "=================================================================\n",
+      " input_1 (InputLayer)        [(None, 1000)]            0         \n",
+      "                                                                 \n",
+      " dense_1 (Dense)             (None, 128)               128128    \n",
+      "                                                                 \n",
+      " dense_2 (Dense)             (None, 128)               16512     \n",
+      "                                                                 \n",
+      " dense_3 (Dense)             (None, 64)                8256      \n",
+      "                                                                 \n",
+      " dense_4 (Dense)             (None, 32)                2080      \n",
+      "                                                                 \n",
+      " y3_output (Dense)           (None, 3)                 99        \n",
+      "                                                                 \n",
+      " softmax (Softmax)           (None, 3)                 0         \n",
+      "                                                                 \n",
+      "=================================================================\n",
+      "Total params: 155075 (605.76 KB)\n",
+      "Trainable params: 155075 (605.76 KB)\n",
+      "Non-trainable params: 0 (0.00 Byte)\n",
+      "_________________________________________________________________\n",
+      "None\n"
+     ]
+    }
+   ],
+   "source": [
+    "# main approach, unsure of model architecture\n",
+    "input_layer = Input(shape=(len(np.transpose(X_t)),))\n",
+    "# embedding_size = 128\n",
+    "# embedding = layers.Embedding(20000, embedding_size)\n",
+    "\n",
+    "first_dense = Dense(units=128, activation='relu')(input_layer)\n",
+    "second_dense = Dense(units=128, activation='relu')(first_dense)\n",
+    "\n",
+    "y1_output = Dense(units=3, name='y1_output')(second_dense)\n",
+    "third_dense = Dense(units=64, activation='relu')(second_dense)\n",
+    "\n",
+    "y2_output = Dense(units=3, name='y2_output')(third_dense)\n",
+    "fourth_dense = Dense(units=32, activation='relu')(third_dense)\n",
+    "\n",
+    "y3_output = Dense(units=3, name='y3_output')(fourth_dense)\n",
+    "out = Softmax(axis=-1)(y3_output)\n",
+    "\n",
+    "model = Model(inputs=input_layer, outputs=out)\n",
+    "#[y1_output, y2_output, y3_output]\n",
+    "\n",
+    "print(model.summary())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 79,
+   "id": "54df5a3e",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:36.249968Z",
+     "iopub.status.busy": "2024-07-19T18:50:36.249343Z",
+     "iopub.status.idle": "2024-07-19T18:50:36.253710Z",
+     "shell.execute_reply": "2024-07-19T18:50:36.252838Z"
+    },
+    "papermill": {
+     "duration": 0.057385,
+     "end_time": "2024-07-19T18:50:36.255873",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:36.198488",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "KerasTensor(type_spec=TensorSpec(shape=(None, 3), dtype=tf.float32, name=None), name='softmax/Softmax:0', description=\"created by layer 'softmax'\")\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(out)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 80,
+   "id": "d5f521b7",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:36.358494Z",
+     "iopub.status.busy": "2024-07-19T18:50:36.358204Z",
+     "iopub.status.idle": "2024-07-19T18:50:36.369024Z",
+     "shell.execute_reply": "2024-07-19T18:50:36.368312Z"
+    },
+    "papermill": {
+     "duration": 0.064507,
+     "end_time": "2024-07-19T18:50:36.370857",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:36.306350",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "model.compile(optimizer='adam', \n",
+    "              loss='BinaryCrossentropy')\n",
+    "# {'y1_output': 'BinaryCrossentropy', 'y2_output': 'BinaryCrossentropy', 'y3_output':'BinaryCrossentropy'},\n",
+    "#               metrics={'y1_output': ['Accuracy'],\n",
+    "#                        'y2_output': ['Accuracy'],\n",
+    "#                        'y3_output': ['Accuracy']}\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 81,
+   "id": "2d46d1ee",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:36.473214Z",
+     "iopub.status.busy": "2024-07-19T18:50:36.472915Z",
+     "iopub.status.idle": "2024-07-19T18:50:49.612960Z",
+     "shell.execute_reply": "2024-07-19T18:50:49.612038Z"
+    },
+    "papermill": {
+     "duration": 13.193467,
+     "end_time": "2024-07-19T18:50:49.614840",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:36.421373",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Epoch 1/5\n",
+      "575/575 [==============================] - 4s 5ms/step - loss: 6.3412 - val_loss: 0.6496\n",
+      "Epoch 2/5\n",
+      "575/575 [==============================] - 2s 4ms/step - loss: 0.6410 - val_loss: 0.6384\n",
+      "Epoch 3/5\n",
+      "575/575 [==============================] - 2s 4ms/step - loss: 0.6361 - val_loss: 0.6371\n",
+      "Epoch 4/5\n",
+      "575/575 [==============================] - 2s 4ms/step - loss: 0.6357 - val_loss: 0.6367\n",
+      "Epoch 5/5\n",
+      "575/575 [==============================] - 2s 4ms/step - loss: 0.6357 - val_loss: 0.6369\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "<keras.src.callbacks.History at 0x7b63b06a9840>"
+      ]
+     },
+     "execution_count": 81,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "model.fit(X_t, labels_train, epochs=5, batch_size=64, validation_split=0.2)\n",
+    "#, batch_size=32 , validation_split=0.1"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 82,
+   "id": "1e9bcf4e",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:49.749157Z",
+     "iopub.status.busy": "2024-07-19T18:50:49.748469Z",
+     "iopub.status.idle": "2024-07-19T18:50:50.605561Z",
+     "shell.execute_reply": "2024-07-19T18:50:50.604516Z"
+    },
+    "papermill": {
+     "duration": 0.925833,
+     "end_time": "2024-07-19T18:50:50.607896",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:49.682063",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "360/360 [==============================] - 1s 2ms/step - loss: 0.6377\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "0.6376978158950806"
+      ]
+     },
+     "execution_count": 82,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "model.evaluate(X_t_test, labels_test)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 83,
+   "id": "db8a60ee",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:50.751015Z",
+     "iopub.status.busy": "2024-07-19T18:50:50.750353Z",
+     "iopub.status.idle": "2024-07-19T18:50:51.601362Z",
+     "shell.execute_reply": "2024-07-19T18:50:51.600500Z"
+    },
+    "papermill": {
+     "duration": 0.922867,
+     "end_time": "2024-07-19T18:50:51.603794",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:50.680927",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "360/360 [==============================] - 1s 1ms/step\n"
+     ]
+    }
+   ],
+   "source": [
+    "# # Generate predictions\n",
+    "predictions = model.predict(X_t_test)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 84,
+   "id": "c2568cd5",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:51.744663Z",
+     "iopub.status.busy": "2024-07-19T18:50:51.743788Z",
+     "iopub.status.idle": "2024-07-19T18:50:51.751359Z",
+     "shell.execute_reply": "2024-07-19T18:50:51.750412Z"
+    },
+    "papermill": {
+     "duration": 0.080315,
+     "end_time": "2024-07-19T18:50:51.753489",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:51.673174",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([[0.3546, 0.3504, 0.295 ],\n",
+       "       [0.3546, 0.3504, 0.295 ],\n",
+       "       [0.3546, 0.3504, 0.295 ],\n",
+       "       ...,\n",
+       "       [0.3546, 0.3504, 0.295 ],\n",
+       "       [0.3546, 0.3504, 0.295 ],\n",
+       "       [0.3546, 0.3504, 0.295 ]], dtype=float32)"
+      ]
+     },
+     "execution_count": 84,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# # print(np.transpose(predictions))\n",
+    "np.round(predictions, 4)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 85,
+   "id": "c05a5f4c",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:51.897359Z",
+     "iopub.status.busy": "2024-07-19T18:50:51.896998Z",
+     "iopub.status.idle": "2024-07-19T18:50:51.902066Z",
+     "shell.execute_reply": "2024-07-19T18:50:51.901319Z"
+    },
+    "papermill": {
+     "duration": 0.076434,
+     "end_time": "2024-07-19T18:50:51.903978",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:51.827544",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "preds_sum=np.sum(np.round(predictions, 4), axis=1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 86,
+   "id": "ca7647dd",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:52.042181Z",
+     "iopub.status.busy": "2024-07-19T18:50:52.041803Z",
+     "iopub.status.idle": "2024-07-19T18:50:52.048244Z",
+     "shell.execute_reply": "2024-07-19T18:50:52.047361Z"
+    },
+    "papermill": {
+     "duration": 0.078026,
+     "end_time": "2024-07-19T18:50:52.050304",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:51.972278",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([1., 1., 1., 1., 1., 1., 1., 1., 1., 1.], dtype=float32)"
+      ]
+     },
+     "execution_count": 86,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "preds_sum[:10]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 87,
+   "id": "bff1f1b3",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:52.191603Z",
+     "iopub.status.busy": "2024-07-19T18:50:52.190849Z",
+     "iopub.status.idle": "2024-07-19T18:50:52.195558Z",
+     "shell.execute_reply": "2024-07-19T18:50:52.194651Z"
+    },
+    "papermill": {
+     "duration": 0.07543,
+     "end_time": "2024-07-19T18:50:52.197596",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:52.122166",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# # main approach, outputs all same\n",
+    "# x = Input(shape=(len(np.transpose(X_t)),))\n",
+    "# embedding_size = 128\n",
+    "# embedding = layers.Embedding(20000, embedding_size)(input_layer)\n",
+    "# input_layer = keras.layers.Flatten()(x)\n",
+    "\n",
+    "# first_dense = Dense(units=128, activation='relu')(input_layer)\n",
+    "# second_dense = Dense(units=128, activation='relu')(first_dense)\n",
+    "\n",
+    "# y1_output = Dense(units=1, name='y1_output')(second_dense)\n",
+    "# third_dense = Dense(units=64, activation='relu')(second_dense)\n",
+    "\n",
+    "# y2_output = Dense(units=1, name='y2_output')(third_dense)\n",
+    "# fourth_dense = Dense(units=32, activation='softmax')(third_dense)\n",
+    "\n",
+    "# y3_output = Dense(units=1, name='y3_output')(fourth_dense)\n",
+    "# # out = Softmax(axis=-1)(y3_output)\n",
+    "# # layers.Flatten()\n",
+    "# model123 = Model(inputs=input_layer, outputs=[y1_output, y2_output, y3_output])\n",
+    "# #[y1_output, y2_output, y3_output]\n",
+    "\n",
+    "# print(model123.summary())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 88,
+   "id": "58ef1707",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:52.335818Z",
+     "iopub.status.busy": "2024-07-19T18:50:52.335171Z",
+     "iopub.status.idle": "2024-07-19T18:50:52.339094Z",
+     "shell.execute_reply": "2024-07-19T18:50:52.338209Z"
+    },
+    "papermill": {
+     "duration": 0.075002,
+     "end_time": "2024-07-19T18:50:52.340967",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:52.265965",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# model123.compile(optimizer='adam', \n",
+    "#               loss='BinaryCrossentropy')\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 89,
+   "id": "12b75bab",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:52.479560Z",
+     "iopub.status.busy": "2024-07-19T18:50:52.479208Z",
+     "iopub.status.idle": "2024-07-19T18:50:52.483267Z",
+     "shell.execute_reply": "2024-07-19T18:50:52.482424Z"
+    },
+    "papermill": {
+     "duration": 0.075508,
+     "end_time": "2024-07-19T18:50:52.485221",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:52.409713",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# model123.fit(X_t, labels_train, epochs=5, batch_size=64, validation_split=0.2)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 90,
+   "id": "bef68cc9",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:52.624933Z",
+     "iopub.status.busy": "2024-07-19T18:50:52.624609Z",
+     "iopub.status.idle": "2024-07-19T18:50:52.628633Z",
+     "shell.execute_reply": "2024-07-19T18:50:52.627740Z"
+    },
+    "papermill": {
+     "duration": 0.076635,
+     "end_time": "2024-07-19T18:50:52.630532",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:52.553897",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# predict123 = model123.predict(X_t_test)\n",
+    "# predict123"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 91,
+   "id": "b5d2f905",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:52.768792Z",
+     "iopub.status.busy": "2024-07-19T18:50:52.768471Z",
+     "iopub.status.idle": "2024-07-19T18:50:52.772327Z",
+     "shell.execute_reply": "2024-07-19T18:50:52.771471Z"
+    },
+    "papermill": {
+     "duration": 0.074744,
+     "end_time": "2024-07-19T18:50:52.774149",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:52.699405",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# np.transpose(predict123)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 92,
+   "id": "2dd48745",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:52.911496Z",
+     "iopub.status.busy": "2024-07-19T18:50:52.911191Z",
+     "iopub.status.idle": "2024-07-19T18:50:52.915011Z",
+     "shell.execute_reply": "2024-07-19T18:50:52.914056Z"
+    },
+    "papermill": {
+     "duration": 0.074247,
+     "end_time": "2024-07-19T18:50:52.916921",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:52.842674",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# #attempting to use keras tuner\n",
+    "# import keras_tuner as kt"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 93,
+   "id": "636d4055",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:53.054921Z",
+     "iopub.status.busy": "2024-07-19T18:50:53.054602Z",
+     "iopub.status.idle": "2024-07-19T18:50:53.059896Z",
+     "shell.execute_reply": "2024-07-19T18:50:53.059036Z"
+    },
+    "papermill": {
+     "duration": 0.076488,
+     "end_time": "2024-07-19T18:50:53.061792",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:52.985304",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# #attempting to use keras tuner\n",
+    "# import keras_tuner as kt\n",
+    "# from tensorflow.keras.models import Sequential\n",
+    "# from tensorflow.keras.layers import Dense, Activation\n",
+    "\n",
+    "# def model_builder(hp):\n",
+    "#     model = Sequential()\n",
+    "#     model.add(Dense(128, activation='relu', input_shape=(len(np.transpose(X_t)),)))\n",
+    "#     model.add(Dropout(0.1))\n",
+    "#     model.add(Dense(64, activation='relu'))\n",
+    "#     model.add(Dropout(0.1))\n",
+    "#     model.add(Dense(32, activation='relu'))\n",
+    "#     model.add(Dropout(0.1))\n",
+    "#     model.add(Dense((labels_train.shape[1]), activation='softmax'))\n",
+    "    \n",
+    "# #     model.add(Dense(10, activation='softmax'))\n",
+    "#     model.compile(\n",
+    "#         optimizer=keras.optimizers.Adam(hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4])),\n",
+    "#         loss='sparse_categorical_crossentropy',\n",
+    "#         metrics=['accuracy']\n",
+    "#     )\n",
+    "#     return model\n",
+    "\n",
+    "# tuner = kt.Hyperband(\n",
+    "#     model_builder,\n",
+    "#     objective='val_accuracy',\n",
+    "#     max_epochs=10,\n",
+    "#     directory='my_dir',\n",
+    "#     project_name='intro_to_kt'\n",
+    "# )\n",
+    "\n",
+    "# tuner.search(X_t, labels_train, epochs=50)\n",
+    "# best_hps = tuner.get_best_hyperparameters(num_trials=1)[0]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 94,
+   "id": "bd464007",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:53.246705Z",
+     "iopub.status.busy": "2024-07-19T18:50:53.245866Z",
+     "iopub.status.idle": "2024-07-19T18:50:53.250968Z",
+     "shell.execute_reply": "2024-07-19T18:50:53.250072Z"
+    },
+    "papermill": {
+     "duration": 0.121765,
+     "end_time": "2024-07-19T18:50:53.252911",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:53.131146",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# def model_builder(hp):\n",
+    "# #   model = keras.Sequential()\n",
+    "# #   model.add(keras.layers.Flatten(input_shape=(28, 28)))\n",
+    "#     model = Sequential()\n",
+    "#     model.add(Dense(128, activation='relu', input_shape=(len(np.transpose(X_t)),)))\n",
+    "# #     model.add(Dropout(0.1))\n",
+    "# #     model.add(Dense(64, activation='relu'))\n",
+    "# #     model.add(Dropout(0.1))\n",
+    "# #     model.add(Dense(32, activation='relu'))\n",
+    "# #     model.add(Dropout(0.1))\n",
+    "# #     model.add(Dense((labels_train.shape[1]), activation='softmax'))\n",
+    "\n",
+    "#   # Tune the number of units in the first Dense layer\n",
+    "#   # Choose an optimal value between 32-512\n",
+    "#     hp_units = hp.Int('units', min_value=32, max_value=512, step=32)\n",
+    "#     model.add(keras.layers.Dense(units=hp_units, activation='relu'))\n",
+    "#     model.add(keras.layers.Dense(10))\n",
+    "\n",
+    "#   # Tune the learning rate for the optimizer\n",
+    "#   # Choose an optimal value from 0.01, 0.001, or 0.0001\n",
+    "#     hp_learning_rate = hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4])\n",
+    "#     model.compile(optimizer=keras.optimizers.Adam(learning_rate=hp_learning_rate),\n",
+    "#                 loss=keras.losses.BinaryCrossentropy(),\n",
+    "#                 metrics=['accuracy'])\n",
+    "#     return model"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 95,
+   "id": "a19c1b07",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:53.394009Z",
+     "iopub.status.busy": "2024-07-19T18:50:53.393183Z",
+     "iopub.status.idle": "2024-07-19T18:50:53.397469Z",
+     "shell.execute_reply": "2024-07-19T18:50:53.396574Z"
+    },
+    "papermill": {
+     "duration": 0.07685,
+     "end_time": "2024-07-19T18:50:53.399344",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:53.322494",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# tuner = kt.Hyperband(model_builder,\n",
+    "#                      objective='val_accuracy',\n",
+    "#                      max_epochs=10,\n",
+    "#                      factor=3,\n",
+    "# #                      directory='my_dir',\n",
+    "#                      project_name='intro_to_kt')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 96,
+   "id": "7afeea2b",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:53.538242Z",
+     "iopub.status.busy": "2024-07-19T18:50:53.537914Z",
+     "iopub.status.idle": "2024-07-19T18:50:53.541868Z",
+     "shell.execute_reply": "2024-07-19T18:50:53.541014Z"
+    },
+    "papermill": {
+     "duration": 0.075268,
+     "end_time": "2024-07-19T18:50:53.543755",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:53.468487",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# stop_early = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 97,
+   "id": "9e29bf4e",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:53.684998Z",
+     "iopub.status.busy": "2024-07-19T18:50:53.684640Z",
+     "iopub.status.idle": "2024-07-19T18:50:53.689158Z",
+     "shell.execute_reply": "2024-07-19T18:50:53.688236Z"
+    },
+    "papermill": {
+     "duration": 0.075996,
+     "end_time": "2024-07-19T18:50:53.691009",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:53.615013",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# tuner.search(X_t, labels_train, epochs=50, validation_split=0.2, callbacks=[stop_early])\n",
+    "\n",
+    "# # Get the optimal hyperparameters\n",
+    "# best_hps=tuner.get_best_hyperparameters(num_trials=1)[0]\n",
+    "\n",
+    "# print(f\"\"\"\n",
+    "# The hyperparameter search is complete. The optimal number of units in the first densely-connected\n",
+    "# layer is {best_hps.get('units')} and the optimal learning rate for the optimizer\n",
+    "# is {best_hps.get('learning_rate')}.\n",
+    "# \"\"\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 98,
+   "id": "71382a3f",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-19T18:50:53.830093Z",
+     "iopub.status.busy": "2024-07-19T18:50:53.829752Z",
+     "iopub.status.idle": "2024-07-19T18:50:53.834239Z",
+     "shell.execute_reply": "2024-07-19T18:50:53.833354Z"
+    },
+    "papermill": {
+     "duration": 0.075863,
+     "end_time": "2024-07-19T18:50:53.836072",
+     "exception": false,
+     "start_time": "2024-07-19T18:50:53.760209",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# # param_grid = dict(epochs=[10,20,30],\n",
+    "# #                   batch_size= [100,200,300] ,\n",
+    "# #                   learning_rate= [0.5, 1],\n",
+    "                  \n",
+    "# #                  )\n",
+    "# learn_rate = [0.001, 0.01, 0.1, 0.2, 0.3]\n",
+    "# momentum = [0.0, 0.2, 0.4, 0.6, 0.8, 0.9]\n",
+    "# param_grid = dict(learn_rate = [0.001, 0.01, 0.1, 0.2, 0.3], momentum = [0.0, 0.2, 0.4, 0.6, 0.8, 0.9])\n",
+    "# # grid = GridSearchCV(estimator=model1, param_grid=param_grid, n_jobs=-1, cv=3)\n",
+    "# # param_grid = dict(optimizer__learning_rate=learn_rate, optimizer__momentum=momentum)\n",
+    "# grid = GridSearchCV(estimator=model1, param_grid=param_grid, n_jobs=-1, cv=3, scoring='accuracy')\n",
+    "# grid_result = grid.fit(X_t, labels_train)"
+   ]
+  }
+ ],
+ "metadata": {
+  "kaggle": {
+   "accelerator": "none",
+   "dataSources": [
+    {
+     "databundleVersionId": 8346466,
+     "sourceId": 66631,
+     "sourceType": "competition"
+    },
+    {
+     "datasetId": 1835,
+     "sourceId": 3176,
+     "sourceType": "datasetVersion"
+    }
+   ],
+   "dockerImageVersionId": 30698,
+   "isGpuEnabled": false,
+   "isInternetEnabled": true,
+   "language": "python",
+   "sourceType": "notebook"
+  },
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.10.13"
+  },
+  "papermill": {
+   "default_parameters": {},
+   "duration": 388.505704,
+   "end_time": "2024-07-19T18:50:57.462957",
+   "environment_variables": {},
+   "exception": null,
+   "input_path": "__notebook__.ipynb",
+   "output_path": "__notebook__.ipynb",
+   "parameters": {},
+   "start_time": "2024-07-19T18:44:28.957253",
+   "version": "2.5.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
