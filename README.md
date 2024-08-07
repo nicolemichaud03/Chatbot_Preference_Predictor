@@ -1,20 +1,23 @@
 # LMSYS - Chatbot Arena Human Preference Predictions
-By Nicole Michaud
-5 August, 2024 
+###### By Nicole Michaud
+###### 5 August, 2024 
+<a href="https://www.kaggle.com/code/nicolemichaud/lmsys-competition"> Link to notebook </a>
 
 ## Introduction
 
 Models utilizing human feedback to improve predictions are quite popular right now. In fact, GPT-4, released earlier this year, is trained using a human feedback reward model.
 In that instance, humans provided feedback for the responses they received from the model, and it took this feedback into account in order to improve its future responses.
 
-The goal of this project is to use human feedback, not just to improve the performance of one chatbot model, but to predict which response from different models will be preferred by users. This could eventually be used to improve these models further, if we could uncover what kind of responses are more likely to be preferred by users.
+The goal of this project is to use human feedback, not just to improve the performance of one chatbot model, but to <em>predict which response from different models will be preferred by users</em>. 
+If we could uncover what kind of responses are more likely to be preferred by users, this could eventually be used to improve these models further.
 
-In each row of the training data, two different chatbot models go head-to-head, and users have indicated which response to the prompt they prefer, either the response from model A ('response_a'), the response from model B ('response_b'), or if they preferred them both equally.
+In each row of the training data, two different chatbot models go head-to-head, and users have indicated which response to the prompt they prefer, either the response from model A ('response_a'), the response from model B ('response_b'), or if they preferred them both equally (they tied).
 
-This information is represented as binary values (0 or 1) in the three target columns ('winner_model_a', 'winner_model_b', and 'winner_tie').
 
-It should be noted that there are various biases that may impact which response users chose as the one they prefer.
-These biases include positional bias, which may lead users to prefer the first response, verbosity bias may, which lead them to prefer the more verbose response, or self-enhancement bias, which may lead them to prefer the response that provides the most self-promotion.
+It should be noted that there are various biases that may impact which response users chose as the one they prefer:
+- positional bias, which may lead users to prefer the first response
+- verbosity bias may, which lead them to prefer the more verbose response
+- self-enhancement bias, which may lead them to prefer the response that provides the most self-promotion
 
 I aim to create a model that takes the prompt and the two different responses as input and outputs the probability of each of the three outcomes: winner_model_a, winner_model_b, and winner_tie.
 
@@ -35,48 +38,36 @@ In general, it would appear that the responses from the GPT chatbots are often p
 
 ## Data Preparation
 
-Some of the rows in the dataframe contain no information for one or more of the text features (they have a string length of 0). There are 137 rows with an empty 'prompt' feature, 147 rows with an empty 'response_a' feature, and 131 rows with an empty 'response_b' feature.
+The main features that will be used by the model to make predictions are all text features: "prompt", "response_a", and "response_b". 
+Therefore, various natural language processing (NLP) techniques are employed to prepare the text features for modeling. 
+These techniques include cleaning the text (removing stopwords, punctuation, numbers, and unnecessary characters, and making all letters lowercase), removing rows that contain empty strings, tokenizing the text, and vectorizing the text sequences to all be of the same length.
+Tools such as NLTK (the Natural Language Toolkit from Scikit-learn) and Regex (regular expressions) were employed for these tasks.
 
-These empty features could cause problems in my modeling process, so I am going to remove rows that have any empty features. This leaves 57,119 rows in the dataset.
+The desired output of modeling is a probability distribution of the three different outcomes (winner_model_a, winner_model_b, winner_tie), so this is a <em>multi-class classification</em> problem.
 
-Next, because the input features for our model are all going to be text features, it is important to perform some cleaning and preprocessing to get these features ready to be tokenized and vectorized.
-
-With the help of NLTK and regex, I use a function to make all letters lowercase, remove stopwords, stem the words, and remove any unnecessary characters or punctuation. 
-
-By joining together the three text columns, I determined that the total number of unique words in the dataset is 444,900. This will be necessary for tokenization.
-
-I remove any unnecessary features/columns that I won't need for modeling or making predictions.
-
-<!-- I then train-test split the train dataset, so that I will have an unseen set of the data to evaluate my models against, before I generate predictions for the test data. -->
-
-Both the trainset and testset features were tokenized, based on the total vocabulary length, vectorized, and then padded to all be of equal length.
-
-In order to make sure the output of the model is a probability distribution of the three different outcomes (winner_model_a, winner_model_b, winner_tie), I am going to format this as a multi-class classification problem.
-
-X_train is going to be the vectorized text of the three text features ('prompt', 'response_a', 'response_b'), and y_train is going to be an array of the three output features, which are already binary.
+X_train is the vectorized text of the three text features ('prompt', 'response_a', 'response_b'), and y_train is an array of the three output features, which are already binary.
 
 
 ## Modeling
 
 
-I created a Keras Sequential model as the baseline model, with an input layer of the correct shape of the inputs (the maximum sequence length of 2000 that I padded/truncated the text features to), an embedding layer for the text features, a couple LSTM layers,  multiple dense layers followed by LayerNormalization layers and Dropout layers to prevent overfitting, and a final output layer of three units for the three different possible outcomes with a Softmax activation function to indicate that these outcomes should mutually exclusive probabilities that add up to 1.
+The baseline model is a Keras Sequential model, with an input layer of the correct shape of the inputs (the maximum length the sequences were padded to), an embedding layer for the text features, a couple LSTM layers,  multiple dense layers followed by LayerNormalization layers and Dropout layers to prevent overfitting, and a final output layer of three units for the three different possible outcomes with a Softmax activation function.
 
-I instantiated the model and compiled it using the Adam optimizer and specified the loss as categorical cross-entropy, which is the same thing as log loss for multi-class classification.
+The model was optimized by using the Adam optimizer and was evaluated based on categorical cross-entropy, which is the same thing as log loss for multi-class classification tasks.
 
-Lastly, I fit the model to the training data, creating a validation split in this step.<!--  I utilized an early stopping callback to stop fitting early if the loss value isn't improving after two epochs. -->
+In fitting the model, a validation split of 20% was implemented to compare model performance on unseen data.
 
-<!-- I generated predictions for the testset I created, to see how they looked and if the values made sense to me (each row should be three positive numbers that add up to 1). -->
-
-The baseline model had a validation loss of [1.0977]. We want the loss value to be as low as possible, so this value isn't bad, but it can probably be improved with hyperparameter tuning.
+This baseline model had a validation loss of [1.0989]. We want the loss value to be as low as possible, so this value isn't bad, but it can hopefully be improved with hyperparameter tuning.
 
 ### Improving Model Performance
 
-With Keras Tuner, I build a model that has the same types of layers as the baseline, but that will search for and use the best parameters for those layers. The hyperparameters I am choosing to use are the vector size of the embedding layer, the dropout rate for the Dropout layer, the units for the LSTM layer and the Dense layers, and the learning rate.
+A Keras Tuner model was built, which had the same types and number of layers as the baseline model, but that was set to search for the optimal parameter values to use for each layer. The optimal learning rate value was also searched for.
 
-I then used the best hyperparameters, as determined by my tuner, to build a new model and fit it to the data for a total of 15 epochs (with a callback to stop early if the validation hasn't improved in 5 epochs).
-The lowest (best) loss value for the validation set from this model was __. 
-I saved this model's weights as my final model, then reloaded the model and used it to generate predictions for the test dataset.
-I then saved these predictions to a CSV file to be submitted for the Kaggle competition.
+Using these optimal hyperparameters, a new model was compiled and fit to the training data, with a validation split. This model had a best validation loss value of 1.0972, which is an improvement from the baseline model.
+
+This is the final model, and its weights were then saved and reloaded to be used to generate predictions for the test dataset.
+
+These predictions were then saved to a CSV file.
 
 ## Conclusion
 
@@ -90,3 +81,4 @@ This was an improvement from the baseline model's best loss value of 1.0989.
 - While this model was being evaluated on its log loss/categorical cross-entropy loss score, I also chose to print out the model's categorical accuracy values. I was able to improve the loss value of the model through hyperparameter tuning, however the accuracy scores remained fairly low (0.3520 at most). In the future, efforts should be made to improve these accuracy scores as well.
 - I chose to build my own model from scratch for this task, however there is an option to instead use a pre-trained model and fine-tune it for the data being used. These pre-trained models typically perform very well. In the future, the perfomance of pre-trained models from Keras for this task could be compared to this model that I built to see which one has lower loss and/or higher accuracy.
 - Another potential approach for improving the performance and efficiency of this model is to use FNet, which adds a Fourier Transform layer for "token mixing" [source], and has been shown to speed up training time and produce results that are comparable to transformer-based language models.
+- Future research/modeling could take the various possible biases into account and incorporate features that mitigate these biases
