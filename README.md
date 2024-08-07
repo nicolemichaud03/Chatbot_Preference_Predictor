@@ -3,12 +3,11 @@
 ###### 5 August, 2024 
 <a href="https://www.kaggle.com/code/nicolemichaud/lmsys-competition"> Link to notebook </a>
 
-<!-- ## Introduction -->
+## Introduction
 
-<div>
-    <h2>Introduction</h2>
+<span>
     <img src="/Images/chatbot.jpeg" alt="chatbot image" />
-</div>
+</span>
 <!-- ![<chatbot image>](Images/chatbot.jpeg "chatbot.jpeg") -->
 
 Models utilizing human feedback to improve predictions are quite popular right now. In fact, GPT-4, released earlier this year, is trained using a human feedback reward model.
@@ -32,12 +31,17 @@ I aim to create a model that takes the prompt and the two different responses as
 
 The training dataset provided contains a total of 57,477 'battles', or rows.
 
+Overall, models that are the Model A for a battle do win most often, which would align with the potential of positional bias.
 
-I was curious to see if there were certain chatbots that seem to win more often than others, regardless of whether they are the model a or model b in the battle.
+<img src="/Images/winner_proportions.png" alt="winner proportions" />
 
-I found that the top 5 chatbot models that most frequently win as model A are gpt-4-1106-preview, gpt-4-0613, gpt-3.5-turbo-0613, gpt-4-0314, and claude-2.1.
+The top 5 chatbot models that most frequently win as model A are gpt-4-1106-preview, gpt-4-0613, gpt-3.5-turbo-0613, gpt-4-0314, and claude-2.1.
+
+<img src="/Images/common_model_a.png" alt="most common model a winners" />
 
 The top 5 chatbot models that most frequently win as model B are the same as the winners for model A, except instead of claude-2.1 in fifth place, we have claude-1.
+
+<img src="/Images/common_model_b.png" alt="most common model b winners" />
 
 In general, it would appear that the responses from the GPT chatbots are often preferred over the responses from other chatbots.
 
@@ -56,8 +60,10 @@ X_train is the vectorized text of the three text features ('prompt', 'response_a
 
 ## Modeling
 
-
 The baseline model is a Keras Sequential model, with an input layer of the correct shape of the inputs (the maximum length the sequences were padded to), an embedding layer for the text features, a couple LSTM layers,  multiple dense layers followed by LayerNormalization layers and Dropout layers to prevent overfitting, and a final output layer of three units for the three different possible outcomes with a Softmax activation function.
+
+<img src="/Images/model.png" alt="baseline model architecture" />
+
 
 The model was optimized by using the Adam optimizer and was evaluated based on categorical cross-entropy, which is the same thing as log loss for multi-class classification tasks.
 
@@ -70,6 +76,8 @@ This baseline model had a validation loss of [1.0989]. We want the loss value to
 A Keras Tuner model was built, which had the same types and number of layers as the baseline model, but that was set to search for the optimal parameter values to use for each layer. The optimal learning rate value was also searched for.
 
 Using these optimal hyperparameters, a new model was compiled and fit to the training data, with a validation split. This model had a best validation loss value of 1.0972, which is an improvement from the baseline model.
+
+<img src="/Images/chatbot_final.png" alt="final model architecture" />
 
 This is the final model, and its weights were then saved and reloaded to be used to generate predictions for the test dataset.
 
