@@ -3,9 +3,13 @@
 ###### 5 August, 2024 
 <a href="https://www.kaggle.com/code/nicolemichaud/lmsys-competition"> Link to notebook </a>
 
-## Introduction
+<!-- ## Introduction -->
 
-![<chatbot image>](Images/chatbot.jpeg "chatbot.jpeg")
+<div>
+    <h2>Introduction</h2>
+    <img src="/Images/chatbot.jpeg" alt="chatbot image" />
+</div>
+<!-- ![<chatbot image>](Images/chatbot.jpeg "chatbot.jpeg") -->
 
 Models utilizing human feedback to improve predictions are quite popular right now. In fact, GPT-4, released earlier this year, is trained using a human feedback reward model.
 In that instance, humans provided feedback for the responses they received from the model, and it took this feedback into account in order to improve its future responses.
