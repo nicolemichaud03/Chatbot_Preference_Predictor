@@ -77,7 +77,7 @@ A Keras Tuner model was built, which had the same types and number of layers as 
 
 Using these optimal hyperparameters, a new model was compiled and fit to the training data, with a validation split. This model had a best validation loss value of 1.0972, which is an improvement from the baseline model.
 
-<img src="/Images/chatbot_final.png" alt="final model architecture" height = '300' width='50' />
+<img src="/Images/chatbot_final.png" alt="final model architecture" height = '800' width='100' />
 
 This is the final model, and its weights were then saved and reloaded to be used to generate predictions for the test dataset.
 
