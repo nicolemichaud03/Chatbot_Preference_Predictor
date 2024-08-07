@@ -62,7 +62,9 @@ X_train is the vectorized text of the three text features ('prompt', 'response_a
 
 The baseline model is a Keras Sequential model, with an input layer of the correct shape of the inputs (the maximum length the sequences were padded to), an embedding layer for the text features, a couple LSTM layers,  multiple dense layers followed by LayerNormalization layers and Dropout layers to prevent overfitting, and a final output layer of three units for the three different possible outcomes with a Softmax activation function.
 
-<img src="/Images/model.png" alt="baseline model architecture" />
+##### Baseline model architecture:
+
+<img src="/Images/model.png" alt="baseline model architecture"  height = '1700' width='300' />
 
 
 The model was optimized by using the Adam optimizer and was evaluated based on categorical cross-entropy, which is the same thing as log loss for multi-class classification tasks.
@@ -76,6 +78,8 @@ This baseline model had a validation loss of [1.0989]. We want the loss value to
 A Keras Tuner model was built, which had the same types and number of layers as the baseline model, but that was set to search for the optimal parameter values to use for each layer. The optimal learning rate value was also searched for.
 
 Using these optimal hyperparameters, a new model was compiled and fit to the training data, with a validation split. This model had a best validation loss value of 1.0972, which is an improvement from the baseline model.
+
+##### Final model architecture:
 
 <img src="/Images/chatbot_final.png" alt="final model architecture" height = '1700' width='300' />
 
